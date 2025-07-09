@@ -1,9 +1,53 @@
 import base64
 import datetime as dt
 import pathlib as pl
-from typing import Any
+from typing import Any, Optional
 from fastmcp import FastMCP
 from . import graph, auth
+
+# Color mapping for natural language color names to Outlook preset codes
+COLOR_MAPPING = {
+    # Standard colors
+    "red": "preset0",
+    "orange": "preset1", 
+    "brown": "preset2",
+    "yellow": "preset3",
+    "green": "preset4",
+    "teal": "preset5",
+    "olive": "preset6",
+    "blue": "preset7",
+    "purple": "preset8",
+    "cranberry": "preset9",
+    "steel": "preset10",
+    "darksteel": "preset11",
+    "gray": "preset12",
+    "darkgray": "preset13",
+    "black": "preset14",
+    
+    # Dark variants
+    "darkred": "preset15",
+    "darkorange": "preset16",
+    "darkbrown": "preset17",
+    "darkyellow": "preset18",
+    "darkgreen": "preset19",
+    "darkteal": "preset20",
+    "darkolive": "preset21",
+    "darkblue": "preset22",
+    "darkpurple": "preset23",
+    "darkcranberry": "preset24",
+    
+    # Aliases with spaces
+    "dark red": "preset15",
+    "dark orange": "preset16",
+    "dark brown": "preset17",
+    "dark yellow": "preset18",
+    "dark green": "preset19",
+    "dark teal": "preset20",
+    "dark olive": "preset21",
+    "dark blue": "preset22",
+    "dark purple": "preset23",
+    "dark cranberry": "preset24",
+}
 
 mcp = FastMCP("microsoft-mcp")
 
@@ -478,7 +522,11 @@ def list_events(
     days_back: int = 0,
     include_details: bool = True,
 ) -> list[dict[str, Any]]:
-    """List calendar events within specified date range, including recurring event instances"""
+    """List calendar events within specified date range, including recurring event instances.
+    
+    Returns event details including categories (array of strings matching user's outlook categories).
+    Use list_outlook_categories to see available categories, or create_outlook_category 
+    to create new ones with colors like 'red', 'blue', 'green', etc."""
     now = dt.datetime.now(dt.timezone.utc)
     start = (now - dt.timedelta(days=days_back)).isoformat()
     end = (now + dt.timedelta(days=days_ahead)).isoformat()
@@ -492,10 +540,10 @@ def list_events(
 
     if include_details:
         params["$select"] = (
-            "id,subject,start,end,location,body,attendees,organizer,isAllDay,recurrence,onlineMeeting,seriesMasterId"
+            "id,subject,start,end,location,body,attendees,organizer,isAllDay,recurrence,onlineMeeting,seriesMasterId,categories"
         )
     else:
-        params["$select"] = "id,subject,start,end,location,organizer,seriesMasterId"
+        params["$select"] = "id,subject,start,end,location,organizer,seriesMasterId,categories"
 
     # Use calendarView to get recurring event instances
     events = list(
@@ -524,8 +572,20 @@ def create_event(
     body: str | None = None,
     attendees: str | list[str] | None = None,
     timezone: str = "UTC",
+    categories: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Create a calendar event"""
+    """Create a calendar event with optional categories.
+    
+    Categories must be strings that match existing outlook categories for the user.
+    Use list_outlook_categories to see available categories, or create_outlook_category 
+    to create new ones with natural language colors like 'red', 'blue', 'green', etc."""
+    
+    # Validate and normalize categories parameter
+    if categories is None:
+        categories = []
+    elif not isinstance(categories, list):
+        categories = []
+    
     event = {
         "subject": subject,
         "start": {"dateTime": start, "timeZone": timezone},
@@ -544,6 +604,9 @@ def create_event(
             {"emailAddress": {"address": a}, "type": "required"} for a in attendees_list
         ]
 
+    if categories:
+        event["categories"] = categories
+
     result = graph.request("POST", "/me/events", account_id, json=event)
     if not result:
         raise ValueError("Failed to create event")
@@ -554,7 +617,12 @@ def create_event(
 def update_event(
     event_id: str, updates: dict[str, Any], account_id: str
 ) -> dict[str, Any]:
-    """Update event properties"""
+    """Update event properties including categories.
+    
+    Categories should be provided as a list of strings in the updates dict.
+    Categories must match existing outlook categories for the user.
+    Use list_outlook_categories to see available categories, or create_outlook_category 
+    to create new ones with colors like 'red', 'blue', 'green', etc."""
     formatted_updates = {}
 
     if "subject" in updates:
@@ -573,6 +641,8 @@ def update_event(
         formatted_updates["location"] = {"displayName": updates["location"]}
     if "body" in updates:
         formatted_updates["body"] = {"contentType": "Text", "content": updates["body"]}
+    if "categories" in updates:
+        formatted_updates["categories"] = updates["categories"]
 
     result = graph.request(
         "PATCH", f"/me/events/{event_id}", account_id, json=formatted_updates
@@ -970,3 +1040,119 @@ def unified_search(
             results.setdefault("other", []).append(item)
 
     return {k: v for k, v in results.items() if v}
+
+
+@mcp.tool
+def list_outlook_categories(account_id: str) -> list[dict[str, Any]]:
+    """List all outlook categories defined for the user.
+    
+    Returns categories with their displayName (used for event categories) and color properties.
+    These are the categories that can be assigned to events, emails, and other items."""
+    categories = list(
+        graph.request_paginated("/me/outlook/masterCategories", account_id)
+    )
+    return categories
+
+
+@mcp.tool
+def create_outlook_category(
+    account_id: str, 
+    display_name: str, 
+    color: str = "blue"
+) -> dict[str, Any]:
+    """Create a new outlook category that can be used for events, emails, and other items.
+    
+    Args:
+        display_name: The name of the category (must be unique for the user)
+        color: Color name like 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 
+               'cranberry', 'teal', 'olive', 'brown', 'steel', 'gray', 'black'.
+               Add 'dark' prefix for darker variants (e.g. 'dark blue', 'dark green').
+        
+    Use this before assigning categories to events if the category doesn't exist yet."""
+    
+    # Convert natural language color to preset code
+    color_lower = color.lower().strip()
+    
+    # Debug: Check if COLOR_MAPPING is available
+    if not COLOR_MAPPING:
+        raise ValueError("Color mapping not initialized. Please report this bug.")
+    
+    if color_lower in COLOR_MAPPING:
+        preset_color = COLOR_MAPPING[color_lower]
+    else:
+        # If color not found, suggest available colors
+        available_colors = sorted(set(COLOR_MAPPING.keys()))
+        close_matches = [c for c in available_colors if color_lower in c or c in color_lower]
+        if close_matches:
+            raise ValueError(f"Unknown color '{color}'. Did you mean: {', '.join(close_matches)}? All available colors: {', '.join(available_colors)}")
+        else:
+            raise ValueError(f"Unknown color '{color}'. Available colors: {', '.join(available_colors)}")
+    
+    category_data = {
+        "displayName": display_name,
+        "color": preset_color
+    }
+    
+    try:
+        result = graph.request("POST", "/me/outlook/masterCategories", account_id, json=category_data)
+        if not result:
+            raise ValueError(f"Failed to create category '{display_name}' - no response from server")
+        return result
+    except Exception as e:
+        error_msg = str(e)
+        # Enhanced error handling for API issues
+        if "400" in error_msg:
+            # Check if it's a duplicate category error
+            if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower():
+                raise ValueError(f"Category '{display_name}' already exists. Please choose a different name or use the existing category.")
+            # Check if it's a color-related error
+            elif "color" in error_msg.lower() or "preset" in error_msg.lower():
+                available_colors = sorted(set(COLOR_MAPPING.keys()))
+                raise ValueError(f"Invalid color preset '{preset_color}' for color '{color}'. Available colors: {', '.join(available_colors)}. Error: {error_msg}")
+            # General 400 error with detailed context
+            else:
+                available_colors = sorted(set(COLOR_MAPPING.keys()))
+                raise ValueError(f"Failed to create category '{display_name}' with color '{color}' (preset: {preset_color}). Available colors: {', '.join(available_colors)}. Server error: {error_msg}")
+        elif "401" in error_msg or "403" in error_msg:
+            raise ValueError(f"Authentication error: Please ensure you're properly authenticated. Error: {error_msg}")
+        else:
+            raise ValueError(f"Failed to create category '{display_name}': {error_msg}")
+
+
+@mcp.tool
+def list_available_colors() -> dict[str, str]:
+    """List all available colors for outlook categories.
+    
+    Returns a mapping of color names to their descriptions, useful for creating
+    categories with natural language color names.
+    
+    [VERSION: 2025-01-09-FIXED] - Includes parameter validation fixes"""
+    
+    # Create a clean mapping with descriptions
+    color_descriptions = {
+        "red": "Bright red",
+        "orange": "Bright orange", 
+        "brown": "Brown",
+        "yellow": "Bright yellow",
+        "green": "Bright green",
+        "teal": "Teal/cyan",
+        "olive": "Olive green",
+        "blue": "Bright blue",
+        "purple": "Bright purple",
+        "cranberry": "Cranberry red",
+        "steel": "Steel blue",
+        "gray": "Medium gray",
+        "black": "Black",
+        "dark red": "Dark red",
+        "dark orange": "Dark orange",
+        "dark brown": "Dark brown",
+        "dark yellow": "Dark yellow",
+        "dark green": "Dark green",
+        "dark teal": "Dark teal",
+        "dark olive": "Dark olive",
+        "dark blue": "Dark blue",
+        "dark purple": "Dark purple",
+        "dark cranberry": "Dark cranberry"
+    }
+    
+    return color_descriptions
