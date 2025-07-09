@@ -580,11 +580,6 @@ def create_event(
     Use list_outlook_categories to see available categories, or create_outlook_category 
     to create new ones with natural language colors like 'red', 'blue', 'green', etc."""
     
-    # Validate and normalize categories parameter
-    if categories is None:
-        categories = []
-    elif not isinstance(categories, list):
-        categories = []
     
     event = {
         "subject": subject,
