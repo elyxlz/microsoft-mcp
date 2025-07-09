@@ -578,7 +578,11 @@ def create_event(
     
     Categories must be strings that match existing outlook categories for the user.
     Use list_outlook_categories to see available categories, or create_outlook_category 
-    to create new ones with natural language colors like 'red', 'blue', 'green', etc."""
+    to create new ones with natural language colors like 'red', 'blue', 'green', etc.
+    
+    Note: Due to Microsoft Graph API limitations, creating events with multiple categories
+    may require a fallback approach (create with single category, then update with all).
+    Single categories are created optimally in one API call."""
     
     
     event = {
@@ -602,7 +606,36 @@ def create_event(
     if categories:
         categories_list = [categories] if isinstance(categories, str) else categories
         event["categories"] = categories_list
+        
+        # Try creating with all categories first (optimal path)
+        try:
+            result = graph.request("POST", "/me/events", account_id, json=event)
+            if result:
+                return result
+        except Exception as e:
+            # Fallback for Microsoft Graph API limitation with multiple categories
+            if len(categories_list) > 1 and ("400" in str(e) or "Bad Request" in str(e)):
+                try:
+                    # Create with first category only, then update with all categories
+                    event["categories"] = [categories_list[0]]
+                    result = graph.request("POST", "/me/events", account_id, json=event)
+                    if result:
+                        # Immediately update with all categories
+                        event_id = result["id"]
+                        update_data = {"categories": categories_list}
+                        update_result = graph.request("PATCH", f"/me/events/{event_id}", account_id, json=update_data)
+                        # Return the result with updated categories
+                        result["categories"] = categories_list
+                        return result
+                    else:
+                        raise ValueError("Failed to create event with fallback method")
+                except Exception as fallback_error:
+                    # If fallback also fails, provide clear error message
+                    raise ValueError(f"Failed to create event with multiple categories. Original error: {str(e)}. Fallback error: {str(fallback_error)}")
+            # Re-raise if not a multiple category issue
+            raise
 
+    # Original path for events without categories
     result = graph.request("POST", "/me/events", account_id, json=event)
     if not result:
         raise ValueError("Failed to create event")
