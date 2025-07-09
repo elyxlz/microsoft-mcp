@@ -4,6 +4,7 @@ import pathlib as pl
 from typing import Any, Optional
 from fastmcp import FastMCP
 from . import graph, auth
+import httpx
 
 # Color mapping for natural language color names to Outlook preset codes
 COLOR_MAPPING = {
@@ -607,31 +608,47 @@ def create_event(
         categories_list = [categories] if isinstance(categories, str) else categories
         event["categories"] = categories_list
         
-        # Try creating with all categories first (optimal path)
         try:
+            # Try creating with all categories first (optimal path)
             result = graph.request("POST", "/me/events", account_id, json=event)
             if result:
                 return result
-        except Exception as e:
-            # Fallback for Microsoft Graph API limitation with multiple categories
-            if len(categories_list) > 1 and ("400" in str(e) or "Bad Request" in str(e)):
+        except httpx.HTTPStatusError as e:
+            # Check if it's a 400 error related to multiple categories
+            if (e.response.status_code == 400 and len(categories_list) > 1):
                 try:
-                    # Create with first category only, then update with all categories
+                    # Fallback: Create with first category only
                     event["categories"] = [categories_list[0]]
                     result = graph.request("POST", "/me/events", account_id, json=event)
+                    
                     if result:
                         # Immediately update with all categories
                         event_id = result["id"]
                         update_data = {"categories": categories_list}
-                        update_result = graph.request("PATCH", f"/me/events/{event_id}", account_id, json=update_data)
-                        # Return the result with updated categories
-                        result["categories"] = categories_list
+                        graph.request("PATCH", f"/me/events/{event_id}", account_id, json=update_data)
+                        result["categories"] = categories_list  # Update local result
                         return result
-                    else:
-                        raise ValueError("Failed to create event with fallback method")
+                        
                 except Exception as fallback_error:
-                    # If fallback also fails, provide clear error message
-                    raise ValueError(f"Failed to create event with multiple categories. Original error: {str(e)}. Fallback error: {str(fallback_error)}")
+                    # Final fallback: Create without categories
+                    try:
+                        del event["categories"]
+                        result = graph.request("POST", "/me/events", account_id, json=event)
+                        if result:
+                            # Try to add categories via update
+                            event_id = result["id"]
+                            update_data = {"categories": categories_list}
+                            try:
+                                graph.request("PATCH", f"/me/events/{event_id}", account_id, json=update_data)
+                                result["categories"] = categories_list
+                            except:
+                                # Event created but categories couldn't be added
+                                result["categories"] = []
+                                result["_category_warning"] = f"Event created but couldn't add categories: {categories_list}"
+                            return result
+                    except Exception as final_error:
+                        raise ValueError(f"Failed to create event. Original error: {str(e)}. Fallback errors: {str(fallback_error)}, {str(final_error)}")
+            
             # Re-raise if not a multiple category issue
             raise
 
