@@ -572,7 +572,7 @@ def create_event(
     body: str | None = None,
     attendees: str | list[str] | None = None,
     timezone: str = "UTC",
-    categories: list[str] | None = None,
+    categories: str | list[str] | None = None,
 ) -> dict[str, Any]:
     """Create a calendar event with optional categories.
     
@@ -600,7 +600,8 @@ def create_event(
         ]
 
     if categories:
-        event["categories"] = categories
+        categories_list = [categories] if isinstance(categories, str) else categories
+        event["categories"] = categories_list
 
     result = graph.request("POST", "/me/events", account_id, json=event)
     if not result:
