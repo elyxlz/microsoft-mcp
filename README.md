@@ -62,12 +62,20 @@ claude
 ### Calendar Tools
 - **`list_events`** - List calendar events with details
 - **`get_event`** - Get specific event details
-- **`create_event`** - Create events with location and attendees
-- **`update_event`** - Reschedule or modify events
+- **`create_event`** - Create events with location, attendees, and categories
+- **`update_event`** - Reschedule or modify events including categories
 - **`delete_event`** - Cancel events
 - **`respond_event`** - Accept/decline/tentative response to invitations
 - **`check_availability`** - Check free/busy times for scheduling
 - **`search_events`** - Search calendar events
+
+### Category Tools
+- **`list_outlook_categories`** - List all outlook categories
+- **`create_outlook_category`** - Create new categories with colors
+- **`update_outlook_category_color`** - Update category colors
+- **`delete_outlook_category`** - Delete categories
+- **`get_outlook_category_by_name`** - Find category by display name
+- **`list_available_colors`** - List all available colors for categories
 
 ### Contact Tools
 - **`list_contacts`** - List all contacts

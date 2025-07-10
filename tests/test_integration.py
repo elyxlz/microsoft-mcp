@@ -27,6 +27,7 @@ def parse_result(result, tool_name=None):
             "list_events",
             "list_contacts",
             "list_files",
+            "list_outlook_categories",
         }
         if tool_name in list_tools and isinstance(data, dict):
             return [data]
@@ -1115,3 +1116,296 @@ async def test_unified_search():
         # Results should be grouped by entity type
         if "message" in search_results:
             assert isinstance(search_results["message"], list)
+
+
+@pytest.mark.asyncio
+async def test_list_outlook_categories():
+    """Test list_outlook_categories tool"""
+    async for session in get_session():
+        account_info = await get_account_info(session)
+        
+        result = await session.call_tool(
+            "list_outlook_categories",
+            {
+                "account_id": account_info["account_id"],
+            },
+        )
+        assert not result.isError
+        categories = parse_result(result)
+        assert categories is not None
+        assert isinstance(categories, list)
+        
+        # Check that categories have expected properties
+        for category in categories:
+            assert "displayName" in category
+            assert "color" in category
+
+
+@pytest.mark.asyncio
+async def test_create_outlook_category():
+    """Test create_outlook_category tool"""
+    async for session in get_session():
+        account_info = await get_account_info(session)
+        
+        # Create a test category
+        category_name = f"MCP Test Category {datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        result = await session.call_tool(
+            "create_outlook_category",
+            {
+                "account_id": account_info["account_id"],
+                "display_name": category_name,
+                "color": "orange",
+            },
+        )
+        assert not result.isError
+        category_data = parse_result(result)
+        assert category_data is not None
+        assert category_data["displayName"] == category_name
+        assert category_data["color"] == "preset1"  # orange maps to preset1
+
+
+@pytest.mark.asyncio
+async def test_event_categories():
+    """Test event categories functionality - create, update, and list with categories"""
+    async for session in get_session():
+        account_info = await get_account_info(session)
+        
+        # First create a test category
+        category_name = f"MCP Event Test {datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        category_result = await session.call_tool(
+            "create_outlook_category",
+            {
+                "account_id": account_info["account_id"],
+                "display_name": category_name,
+                "color": "brown",
+            },
+        )
+        assert not category_result.isError
+        
+        # Create event with category
+        start_time = datetime.now(timezone.utc) + timedelta(days=9)
+        end_time = start_time + timedelta(hours=1)
+        
+        event_result = await session.call_tool(
+            "create_event",
+            {
+                "account_id": account_info["account_id"],
+                "subject": "MCP Category Test Event",
+                "start": start_time.isoformat(),
+                "end": end_time.isoformat(),
+                "categories": [category_name],
+            },
+        )
+        assert not event_result.isError
+        event_data = parse_result(event_result)
+        assert event_data is not None
+        assert "id" in event_data
+        event_id = event_data.get("id")
+        
+        # Verify event has the category
+        get_result = await session.call_tool(
+            "get_event",
+            {
+                "event_id": event_id,
+                "account_id": account_info["account_id"],
+            },
+        )
+        assert not get_result.isError
+        event_details = parse_result(get_result)
+        assert event_details is not None
+        assert "categories" in event_details
+        assert category_name in event_details["categories"]
+        
+        # Update event categories
+        new_category_name = f"MCP Updated Category {datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        # Create another category
+        new_category_result = await session.call_tool(
+            "create_outlook_category",
+            {
+                "account_id": account_info["account_id"],
+                "display_name": new_category_name,
+                "color": "yellow",
+            },
+        )
+        assert not new_category_result.isError
+        
+        # Update event with new categories
+        update_result = await session.call_tool(
+            "update_event",
+            {
+                "event_id": event_id,
+                "account_id": account_info["account_id"],
+                "updates": {
+                    "categories": [new_category_name],
+                },
+            },
+        )
+        assert not update_result.isError
+        
+        # Verify categories were updated
+        get_updated_result = await session.call_tool(
+            "get_event",
+            {
+                "event_id": event_id,
+                "account_id": account_info["account_id"],
+            },
+        )
+        assert not get_updated_result.isError
+        updated_event = parse_result(get_updated_result)
+        assert updated_event is not None
+        assert "categories" in updated_event
+        assert new_category_name in updated_event["categories"]
+        assert category_name not in updated_event["categories"]
+        
+        # Test list_events includes categories
+        list_result = await session.call_tool(
+            "list_events",
+            {
+                "account_id": account_info["account_id"],
+                "days_ahead": 10,
+            },
+        )
+        assert not list_result.isError
+        events = parse_result(list_result)
+        assert events is not None
+        assert isinstance(events, list)
+        
+        # Find our test event in the list
+        test_event = None
+        for event in events:
+            if event.get("id") == event_id:
+                test_event = event
+                break
+        
+        assert test_event is not None
+        assert "categories" in test_event
+        assert new_category_name in test_event["categories"]
+        
+        # Clean up - delete the event
+        delete_result = await session.call_tool(
+            "delete_event",
+            {
+                "account_id": account_info["account_id"],
+                "event_id": event_id,
+                "send_cancellation": False,
+            },
+        )
+        assert not delete_result.isError
+
+
+
+@pytest.mark.asyncio
+async def test_list_available_colors():
+    """Test list_available_colors tool"""
+    async for session in get_session():
+        result = await session.call_tool("list_available_colors", {})
+        assert not result.isError
+        colors = parse_result(result)
+        assert colors is not None
+        assert isinstance(colors, dict)
+        
+        # Check that key colors are present
+        expected_colors = ["red", "blue", "green", "yellow", "orange", "purple", "dark red", "dark blue"]
+        for color in expected_colors:
+            assert color in colors
+            assert isinstance(colors[color], str)
+
+
+@pytest.mark.asyncio
+async def test_create_event_with_categories():
+    """Test that create_event now works with categories in one shot"""
+    async for session in get_session():
+        account_info = await get_account_info(session)
+        
+        # Create a test category first
+        category_name = f"MCP Direct Test {datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        category_result = await session.call_tool(
+            "create_outlook_category",
+            {
+                "account_id": account_info["account_id"],
+                "display_name": category_name,
+                "color": "green",
+            },
+        )
+        assert not category_result.isError
+        
+        # Now test creating event with categories directly
+        start_time = datetime.now(timezone.utc) + timedelta(days=10)
+        end_time = start_time + timedelta(hours=1)
+        
+        event_result = await session.call_tool(
+            "create_event",
+            {
+                "account_id": account_info["account_id"],
+                "subject": "MCP Direct Category Test",
+                "start": start_time.isoformat(),
+                "end": end_time.isoformat(),
+                "categories": [category_name],
+            },
+        )
+        assert not event_result.isError
+        event_data = parse_result(event_result)
+        assert event_data is not None
+        assert "id" in event_data
+        event_id = event_data.get("id")
+        
+        # Verify event was created with the category
+        get_result = await session.call_tool(
+            "get_event",
+            {
+                "event_id": event_id,
+                "account_id": account_info["account_id"],
+            },
+        )
+        assert not get_result.isError
+        event_details = parse_result(get_result)
+        assert event_details is not None
+        assert "categories" in event_details
+        assert category_name in event_details["categories"]
+        
+        # Clean up
+        delete_result = await session.call_tool(
+            "delete_event",
+            {
+                "account_id": account_info["account_id"],
+                "event_id": event_id,
+                "send_cancellation": False,
+            },
+        )
+        assert not delete_result.isError
+
+
+@pytest.mark.asyncio
+async def test_natural_language_colors():
+    """Test that natural language colors work correctly"""
+    async for session in get_session():
+        account_info = await get_account_info(session)
+        
+        # Test various color formats
+        test_cases = [
+            ("red", "preset0"),
+            ("blue", "preset7"),
+            ("dark green", "preset19"),
+            ("purple", "preset8"),
+        ]
+        
+        for color_name, expected_preset in test_cases:
+            category_name = f"MCP Color Test {color_name} {datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
+            result = await session.call_tool(
+                "create_outlook_category",
+                {
+                    "account_id": account_info["account_id"],
+                    "display_name": category_name,
+                    "color": color_name,
+                },
+            )
+            assert not result.isError
+            category_data = parse_result(result)
+            assert category_data is not None
+            assert category_data["displayName"] == category_name
+            assert category_data["color"] == expected_preset
