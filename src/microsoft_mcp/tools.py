@@ -1125,8 +1125,11 @@ def unified_search(
 def list_outlook_categories(account_id: str) -> list[dict[str, Any]]:
     """List all outlook categories defined for the user.
     
-    Returns categories with their displayName (used for event categories) and color properties.
-    These are the categories that can be assigned to events, emails, and other items."""
+    Returns categories with their displayName (used for event categories), color properties, and id.
+    These are the categories that can be assigned to events, emails, and other items.
+    
+    The returned id field is needed for update_outlook_category_color() and delete_outlook_category() operations.
+    Use get_outlook_category_by_name() to find a category by display name when you only know the name."""
     categories = list(
         graph.request_paginated("/me/outlook/masterCategories", account_id)
     )
@@ -1141,13 +1144,17 @@ def create_outlook_category(
 ) -> dict[str, Any]:
     """Create a new outlook category that can be used for events, emails, and other items.
     
+    IMPORTANT: Once created, category names cannot be changed. Only the color can be updated.
+    To change a category name, you must delete the old category and create a new one.
+    
     Args:
-        display_name: The name of the category (must be unique for the user)
+        display_name: The name of the category (must be unique for the user, cannot be changed later)
         color: Color name like 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 
                'cranberry', 'teal', 'olive', 'brown', 'steel', 'gray', 'black'.
                Add 'dark' prefix for darker variants (e.g. 'dark blue', 'dark green').
         
-    Use this before assigning categories to events if the category doesn't exist yet."""
+    Use this before assigning categories to events if the category doesn't exist yet.
+    Use update_outlook_category_color() to change the color of existing categories."""
     
     # Convert natural language color to preset code
     color_lower = color.lower().strip()
@@ -1235,3 +1242,137 @@ def list_available_colors() -> dict[str, str]:
     }
     
     return color_descriptions
+
+
+@mcp.tool
+def update_outlook_category_color(account_id: str, category_id: str, color: str) -> dict[str, Any]:
+    """Update the color of an existing outlook category.
+    
+    IMPORTANT: Only the color property can be updated for existing categories.
+    To change a category name, you must delete the old category and create a new one.
+    
+    Args:
+        account_id: The account ID to use for authentication
+        category_id: The ID of the category to update (get from list_outlook_categories)
+        color: Color name like 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 
+               'teal', 'olive', 'brown', 'cranberry', 'steel', 'gray', 'black', 
+               or dark variants like 'dark red', 'dark blue', etc.
+    
+    Returns:
+        Updated category object with id, displayName, and color
+    
+    Use this when you need to change the color of an existing category.
+    Use get_outlook_category_by_name() to find category ID when you only know the display name."""
+    
+    # Convert natural language color to preset code
+    color_lower = color.lower().strip()
+    
+    # Validate color exists in our mapping
+    if color_lower not in COLOR_MAPPING:
+        available_colors = sorted(set(COLOR_MAPPING.keys()))
+        close_matches = [c for c in available_colors if color_lower in c or c in color_lower]
+        if close_matches:
+            raise ValueError(f"Unknown color '{color}'. Did you mean: {', '.join(close_matches)}? All available colors: {', '.join(available_colors)}")
+        else:
+            raise ValueError(f"Unknown color '{color}'. Available colors: {', '.join(available_colors)}")
+    
+    preset_color = COLOR_MAPPING[color_lower]
+    
+    # Prepare update data
+    update_data = {
+        "color": preset_color
+    }
+    
+    try:
+        result = graph.request("PATCH", f"/me/outlook/masterCategories/{category_id}", account_id, json=update_data)
+        if not result:
+            raise ValueError(f"Failed to update category color - no response from server")
+        
+        return result
+        
+    except Exception as e:
+        error_msg = str(e).lower()
+        
+        # Check for specific error types and provide helpful messages
+        if "404" in error_msg or "not found" in error_msg:
+            raise ValueError(f"Category with ID '{category_id}' not found. Use list_outlook_categories() to see available categories.")
+        elif "403" in error_msg or "forbidden" in error_msg:
+            raise ValueError(f"Permission denied. Make sure you have MailboxSettings.ReadWrite permission to update categories.")
+        elif "400" in error_msg or "bad request" in error_msg:
+            available_colors = sorted(set(COLOR_MAPPING.keys()))
+            raise ValueError(f"Invalid color preset '{preset_color}' for color '{color}'. Available colors: {', '.join(available_colors)}. Error: {error_msg}")
+        else:
+            raise ValueError(f"Failed to update category color: {str(e)}")
+
+
+@mcp.tool
+def delete_outlook_category(account_id: str, category_id: str) -> dict[str, str]:
+    """Delete an outlook category.
+    
+    IMPORTANT: Deleting a category will not remove it from existing messages - 
+    it will appear grayed out in those messages. You'll need to manually remove 
+    categories from individual messages if desired.
+    
+    Args:
+        account_id: The account ID to use for authentication
+        category_id: The ID of the category to delete (get from list_outlook_categories)
+    
+    Returns:
+        Success confirmation message
+    
+    Use get_outlook_category_by_name() to find category ID when you only know the display name."""
+    
+    try:
+        # DELETE request returns 204 No Content on success (no response body)
+        graph.request("DELETE", f"/me/outlook/masterCategories/{category_id}", account_id)
+        
+        return {
+            "message": f"Category '{category_id}' deleted successfully",
+            "warning": "This category will still appear grayed out in existing messages. Remove manually from individual messages if needed."
+        }
+        
+    except Exception as e:
+        error_msg = str(e).lower()
+        
+        # Check for specific error types and provide helpful messages
+        if "404" in error_msg or "not found" in error_msg:
+            raise ValueError(f"Category with ID '{category_id}' not found. Use list_outlook_categories() to see available categories.")
+        elif "403" in error_msg or "forbidden" in error_msg:
+            raise ValueError(f"Permission denied. Make sure you have MailboxSettings.ReadWrite permission to delete categories.")
+        else:
+            raise ValueError(f"Failed to delete category: {str(e)}")
+
+
+@mcp.tool
+def get_outlook_category_by_name(account_id: str, display_name: str) -> dict[str, Any] | None:
+    """Find an outlook category by its display name.
+    
+    This is a helper function to get the category ID when you only know the display name.
+    Use the returned ID with update_outlook_category_color() or delete_outlook_category().
+    
+    Args:
+        account_id: The account ID to use for authentication
+        display_name: The display name of the category to find
+    
+    Returns:
+        Category object with id, displayName, and color if found, None otherwise
+    
+    Example:
+        category = get_outlook_category_by_name(account_id, "Personal")
+        if category:
+            update_outlook_category_color(account_id, category["id"], "red")
+    """
+    
+    try:
+        categories = list_outlook_categories(account_id)
+        
+        # Search for category by display name (case-insensitive)
+        display_name_lower = display_name.lower().strip()
+        for category in categories:
+            if category["displayName"].lower() == display_name_lower:
+                return category
+        
+        return None
+        
+    except Exception as e:
+        raise ValueError(f"Failed to search for category '{display_name}': {str(e)}")
