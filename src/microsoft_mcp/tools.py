@@ -150,7 +150,7 @@ def authenticate_account() -> dict[str, str]:
         "step4": "After authenticating, use the 'complete_authentication' tool to finish the process",
         "device_code": flow["user_code"],
         "verification_url": verification_url,
-        "expires_in": flow.get("expires_in", 900),
+        "expires_in": str(flow.get("expires_in", 900)),
         "_flow_cache": str(flow),
     }
 
