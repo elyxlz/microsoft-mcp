@@ -78,6 +78,28 @@ def request(
                 time.sleep(wait_time)
                 retry_count += 1
                 continue
+            
+            # Add debug info for 403 Forbidden errors and include in exception
+            if e.response.status_code == 403:
+                debug_info = {
+                    "request_method": method,
+                    "request_url": f"{BASE_URL}{path}",
+                    "request_headers": dict(headers),
+                    "request_params": params,
+                    "request_json": json,
+                    "response_status": e.response.status_code,
+                    "response_headers": dict(e.response.headers),
+                }
+                try:
+                    debug_info["response_body"] = e.response.text
+                except:
+                    debug_info["response_body"] = "<could not decode>"
+                
+                # Include debug info in the exception message
+                import json as json_lib
+                debug_json = json_lib.dumps(debug_info, indent=2)
+                raise Exception(f"403 Forbidden with debug info: {debug_json}") from e
+            
             raise
 
     return None
