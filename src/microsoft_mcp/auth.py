@@ -7,7 +7,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CACHE_FILE = pl.Path.home() / ".microsoft_mcp_token_cache.json"
-SCOPES = ["https://graph.microsoft.com/.default"]
+SCOPES = [
+    "https://graph.microsoft.com/Mail.ReadWrite",
+    "https://graph.microsoft.com/Calendars.ReadWrite", 
+    "https://graph.microsoft.com/Files.ReadWrite",
+    "https://graph.microsoft.com/Contacts.Read",
+    "https://graph.microsoft.com/People.Read",
+    "https://graph.microsoft.com/User.Read"
+]
 
 
 class Account(NamedTuple):

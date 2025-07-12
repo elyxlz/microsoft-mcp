@@ -78,6 +78,17 @@ def request(
                 time.sleep(wait_time)
                 retry_count += 1
                 continue
+            
+            # Add concise error info for 403 Forbidden errors
+            if e.response.status_code == 403:
+                try:
+                    error_body = e.response.text
+                    if error_body:
+                        raise Exception(f"403 Forbidden: {error_body}") from e
+                except:
+                    pass
+                raise Exception(f"403 Forbidden - Access denied for {method} {path}") from e
+            
             raise
 
     return None

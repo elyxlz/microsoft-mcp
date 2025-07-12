@@ -21,6 +21,99 @@ FOLDERS = {
 
 
 @mcp.tool
+def debug_token_info(account_id: str) -> dict[str, Any]:
+    """Debug function to inspect token scopes and claims
+    
+    This helps diagnose authentication and permission issues by showing
+    what scopes the current token actually has.
+    """
+    try:
+        # Get current user info to verify token works
+        me_info = graph.request("GET", "/me", account_id)
+        
+        result = {
+            "user_info": me_info,
+            "token_status": "valid" if me_info else "invalid"
+        }
+        
+        # Try to get more detailed token info
+        try:
+            token_info = graph.request("GET", "/me/oauth2PermissionGrants", account_id)
+            result["permission_grants"] = token_info
+        except Exception as e:
+            result["permission_grants_error"] = str(e)
+            
+        return result
+        
+    except Exception as e:
+        return {
+            "error": str(e),
+            "token_status": "error"
+        }
+
+
+@mcp.tool 
+def test_mail_permissions(account_id: str) -> dict[str, Any]:
+    """Test specific mail permissions to diagnose 403 errors
+    
+    This function tests read and write permissions systematically to identify
+    exactly where the permission issue occurs.
+    """
+    results = {}
+    
+    # Test 1: Basic read access to user info
+    try:
+        me_info = graph.request("GET", "/me", account_id)
+        results["me_endpoint"] = {"status": "success", "data": me_info}
+    except Exception as e:
+        results["me_endpoint"] = {"status": "error", "error": str(e)}
+    
+    # Test 2: List mail folders (read permission)
+    try:
+        folders = graph.request("GET", "/me/mailFolders", account_id)
+        results["list_folders"] = {"status": "success", "folder_count": len(folders.get("value", []))}
+    except Exception as e:
+        results["list_folders"] = {"status": "error", "error": str(e)}
+    
+    # Test 3: List emails (read permission)  
+    try:
+        emails = graph.request("GET", "/me/messages?$top=1", account_id)
+        results["list_emails"] = {"status": "success", "email_count": len(emails.get("value", []))}
+    except Exception as e:
+        results["list_emails"] = {"status": "error", "error": str(e)}
+    
+    # Test 4: Try to get first email for testing write operations
+    first_email_id = None
+    try:
+        emails = graph.request("GET", "/me/messages?$top=1&$select=id", account_id)
+        if emails and "value" in emails and emails["value"]:
+            first_email_id = emails["value"][0]["id"]
+            results["get_test_email"] = {"status": "success", "email_id": first_email_id}
+        else:
+            results["get_test_email"] = {"status": "no_emails", "message": "No emails found to test with"}
+    except Exception as e:
+        results["get_test_email"] = {"status": "error", "error": str(e)}
+    
+    # Test 5: Try write operation (this is where we expect the 403)
+    if first_email_id:
+        try:
+            # Try to read the isRead property first
+            current_email = graph.request("GET", f"/me/messages/{first_email_id}?$select=id,isRead", account_id)
+            current_is_read = current_email.get("isRead", False) if current_email else False
+            
+            # Try to update it (this should trigger the 403 with detailed debug info)
+            update_result = graph.request("PATCH", f"/me/messages/{first_email_id}", account_id, 
+                                        json={"isRead": not current_is_read})
+            results["test_update_email"] = {"status": "success", "data": update_result}
+        except Exception as e:
+            results["test_update_email"] = {"status": "error", "error": str(e)}
+    else:
+        results["test_update_email"] = {"status": "skipped", "reason": "No email ID available for testing"}
+        
+    return results
+
+
+@mcp.tool
 def list_accounts() -> list[dict[str, str]]:
     """List all signed-in Microsoft accounts"""
     return [
@@ -57,7 +150,7 @@ def authenticate_account() -> dict[str, str]:
         "step4": "After authenticating, use the 'complete_authentication' tool to finish the process",
         "device_code": flow["user_code"],
         "verification_url": verification_url,
-        "expires_in": flow.get("expires_in", 900),
+        "expires_in": str(flow.get("expires_in", 900)),
         "_flow_cache": str(flow),
     }
 
