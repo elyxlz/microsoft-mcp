@@ -282,7 +282,11 @@ def create_email_draft(
             att.get("content_type", "application/octet-stream"),
         )
 
-    return result
+    return {
+        "status": "created",
+        "id": result["id"],
+        "subject": result.get("subject", ""),
+    }
 
 
 @mcp.tool
@@ -409,7 +413,7 @@ def update_email(
     )
     if not result:
         raise ValueError(f"Failed to update email {email_id} - no response")
-    return result
+    return {"status": "updated", "email_id": email_id}
 
 
 @mcp.tool
@@ -547,7 +551,11 @@ def create_event(
     result = graph.request("POST", "/me/events", account_id, json=event)
     if not result:
         raise ValueError("Failed to create event")
-    return result
+    return {
+        "status": "created",
+        "id": result["id"],
+        "subject": result.get("subject", ""),
+    }
 
 
 @mcp.tool
@@ -692,7 +700,11 @@ def create_contact(
     result = graph.request("POST", "/me/contacts", account_id, json=contact)
     if not result:
         raise ValueError("Failed to create contact")
-    return result
+    return {
+        "status": "created",
+        "id": result["id"],
+        "name": f"{result.get('givenName', '')} {result.get('surname', '')}".strip(),
+    }
 
 
 @mcp.tool
