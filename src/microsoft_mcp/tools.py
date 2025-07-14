@@ -1,11 +1,22 @@
 import base64
 import datetime as dt
 import pathlib as pl
+import urllib.parse
 from typing import Any
 from fastmcp import FastMCP
 from . import graph, auth
 
 mcp = FastMCP("microsoft-mcp")
+
+
+def _decode_email_id(email_id: str) -> str:
+    """Safely decode email ID from URL encoding.
+    
+    Microsoft Graph search results return email IDs that are already URL-encoded,
+    but they need to be decoded before being used in URL paths.
+    """
+    return urllib.parse.unquote(email_id)
+
 
 FOLDERS = {
     k.casefold(): v
@@ -183,7 +194,7 @@ def get_email(
     if include_attachments:
         params["$expand"] = "attachments($select=id,name,size,contentType)"
 
-    result = graph.request("GET", f"/me/messages/{email_id}", account_id, params=params)
+    result = graph.request("GET", f"/me/messages/{_decode_email_id(email_id)}", account_id, params=params)
     if not result:
         raise ValueError(f"Email with ID {email_id} not found")
 
@@ -405,7 +416,7 @@ def update_email(
 ) -> dict[str, Any]:
     """Update email properties (isRead, categories, flag, etc.)"""
     result = graph.request(
-        "PATCH", f"/me/messages/{email_id}", account_id, json=updates
+        "PATCH", f"/me/messages/{_decode_email_id(email_id)}", account_id, json=updates
     )
     if not result:
         raise ValueError(f"Failed to update email {email_id} - no response")
@@ -415,7 +426,7 @@ def update_email(
 @mcp.tool
 def delete_email(email_id: str, account_id: str) -> dict[str, str]:
     """Delete an email"""
-    graph.request("DELETE", f"/me/messages/{email_id}", account_id)
+    graph.request("DELETE", f"/me/messages/{_decode_email_id(email_id)}", account_id)
     return {"status": "deleted"}
 
 
@@ -444,7 +455,7 @@ def move_email(
 
     payload = {"destinationId": folder_id}
     result = graph.request(
-        "POST", f"/me/messages/{email_id}/move", account_id, json=payload
+        "POST", f"/me/messages/{_decode_email_id(email_id)}/move", account_id, json=payload
     )
     if not result:
         raise ValueError("Failed to move email - no response from server")
@@ -456,7 +467,7 @@ def move_email(
 @mcp.tool
 def reply_to_email(account_id: str, email_id: str, body: str) -> dict[str, str]:
     """Reply to an email (sender only)"""
-    endpoint = f"/me/messages/{email_id}/reply"
+    endpoint = f"/me/messages/{_decode_email_id(email_id)}/reply"
     payload = {"message": {"body": {"contentType": "Text", "content": body}}}
     graph.request("POST", endpoint, account_id, json=payload)
     return {"status": "sent"}
@@ -465,7 +476,7 @@ def reply_to_email(account_id: str, email_id: str, body: str) -> dict[str, str]:
 @mcp.tool
 def reply_all_email(account_id: str, email_id: str, body: str) -> dict[str, str]:
     """Reply to all recipients of an email"""
-    endpoint = f"/me/messages/{email_id}/replyAll"
+    endpoint = f"/me/messages/{_decode_email_id(email_id)}/replyAll"
     payload = {"message": {"body": {"contentType": "Text", "content": body}}}
     graph.request("POST", endpoint, account_id, json=payload)
     return {"status": "sent"}
@@ -814,7 +825,7 @@ def get_attachment(
 ) -> dict[str, Any]:
     """Download email attachment to a specified file path"""
     result = graph.request(
-        "GET", f"/me/messages/{email_id}/attachments/{attachment_id}", account_id
+        "GET", f"/me/messages/{_decode_email_id(email_id)}/attachments/{attachment_id}", account_id
     )
 
     if not result:
