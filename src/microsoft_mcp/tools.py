@@ -888,38 +888,33 @@ def search_emails(
 @mcp.tool
 def search_emails_advanced(
     account_id: str,
-    query: str | None = None,
-    sender: str | None = None,
-    subject_contains: str | None = None,
-    date_after: str | None = None,
-    date_before: str | None = None,
-    has_attachments: bool | None = None,
-    folder: str | None = None,
-    is_read: bool | None = None,
-    importance: str | None = None,
+    query: str = "",
+    sender: str = "",
+    subject_contains: str = "",
+    date_after: str = "",
+    date_before: str = "",
+    folder: str = "inbox",
+    has_attachments: bool = False,
+    is_read: bool = True,
+    importance: str = "",
     content_level: str = "summary",
     limit: int = 50,
-    sort_by: str = "receivedDateTime",
 ) -> list[dict[str, Any]]:
-    """Advanced email search with structured parameters and optimized content loading
+    """Advanced email search with structured parameters and content optimization
 
     Args:
         account_id: Microsoft account ID
         query: Free-text search query
-        sender: Email address or domain to search from (e.g., "john@company.com" or "company.com")
+        sender: Email address or domain to search from
         subject_contains: Text that must appear in the subject line
         date_after: ISO date string (e.g., "2025-01-01") for emails received after this date
         date_before: ISO date string (e.g., "2025-12-31") for emails received before this date
-        has_attachments: Filter emails with/without attachments
         folder: Folder to search in (inbox, sent, drafts, etc.)
-        is_read: Filter by read/unread status
+        has_attachments: Filter for emails with attachments (True) or without (False)
+        is_read: Filter for read emails (True) or unread emails (False)
         importance: Filter by importance level ("high", "normal", "low")
-        content_level: Content detail level - "summary" (minimal), "preview" (with bodyPreview), "full" (complete body)
+        content_level: Content detail level - "summary", "preview", or "full"
         limit: Maximum number of results to return
-        sort_by: Sort order ("receivedDateTime", "relevance")
-
-    Returns:
-        List of email objects with content based on content_level
     """
     # Build KQL (Keyword Query Language) search string
     kql_parts = []
@@ -927,11 +922,9 @@ def search_emails_advanced(
     if query:
         kql_parts.append(query)
     if sender:
-        # Handle both full email and domain searches
         if "@" in sender and not sender.startswith("@"):
             kql_parts.append(f"from:{sender}")
         else:
-            # Domain search or partial match
             kql_parts.append(f'from:"{sender}"')
     if subject_contains:
         kql_parts.append(f'subject:"{subject_contains}"')
@@ -939,52 +932,41 @@ def search_emails_advanced(
         kql_parts.append(f"received>={date_after}")
     if date_before:
         kql_parts.append(f"received<={date_before}")
-    if has_attachments is not None:
-        kql_parts.append(f"hasattachments:{str(has_attachments).lower()}")
-    if is_read is not None:
-        kql_parts.append(f"isread:{str(is_read).lower()}")
     if importance:
         kql_parts.append(f"importance:{importance.lower()}")
+
+    # Add boolean filters to KQL
+    if has_attachments:
+        kql_parts.append("hasattachments:true")
+    if not is_read:
+        kql_parts.append("isread:false")
 
     search_query = " AND ".join(kql_parts) if kql_parts else ""
 
     # Define field selection based on content_level
     if content_level == "summary":
-        select_fields = "id,subject,from,toRecipients,receivedDateTime,hasAttachments,conversationId,isRead,importance"
+        select_fields = "id,subject,from,toRecipients,receivedDateTime,hasAttachments,conversationId,isRead"
     elif content_level == "preview":
-        select_fields = "id,subject,from,toRecipients,receivedDateTime,hasAttachments,bodyPreview,conversationId,isRead,importance"
+        select_fields = "id,subject,from,toRecipients,receivedDateTime,hasAttachments,bodyPreview,conversationId,isRead"
     else:  # full
-        select_fields = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,body,conversationId,isRead,importance"
+        select_fields = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,body,conversationId,isRead"
 
-    # Use folder-specific search if folder is specified
-    if folder:
-        folder_path = FOLDERS.get(folder.casefold(), folder)
-        endpoint = f"/me/mailFolders/{folder_path}/messages"
+    # Use folder-specific search
+    folder_path = FOLDERS.get(folder.casefold(), folder)
+    endpoint = f"/me/mailFolders/{folder_path}/messages"
 
-        params = {
-            "$top": min(limit, 100),
-            "$select": select_fields,
-            "$orderby": f"{sort_by} desc" if sort_by == "receivedDateTime" else sort_by,
-        }
+    params = {
+        "$top": min(limit, 100),
+        "$select": select_fields,
+        "$orderby": "receivedDateTime desc",
+    }
 
-        if search_query:
-            params["$search"] = f'"{search_query}"'
+    if search_query:
+        params["$search"] = f'"{search_query}"'
 
-        return list(
-            graph.request_paginated(endpoint, account_id, params=params, limit=limit)
-        )
-    else:
-        # Use modern search API for cross-folder search
-        if not search_query:
-            # If no search query, fall back to list_emails with limited fields
-            return list_emails(account_id, "inbox", limit, content_level != "summary")
-
-        # Use the search API with field selection
-        return list(
-            graph.search_query(
-                search_query, ["message"], account_id, limit, select_fields.split(",")
-            )
-        )
+    return list(
+        graph.request_paginated(endpoint, account_id, params=params, limit=limit)
+    )
 
 
 @mcp.tool
