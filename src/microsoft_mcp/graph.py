@@ -345,18 +345,23 @@ def search_query(
                                 return
 
                             # Apply relevance threshold filtering for semantic search
+                            rank_value = hit.get("rank", items_returned + 1)
                             if semantic_search and relevance_threshold > 0.0:
-                                hit_score = hit.get("hitScore", 0.0)
-                                if hit_score < relevance_threshold:
+                                # Use inverse rank as relevance score for threshold comparison
+                                relevance_score = (
+                                    1.0 / rank_value if rank_value > 0 else 0.0
+                                )
+                                if relevance_score < relevance_threshold:
                                     continue
 
                             resource = hit["resource"]
 
                             # Add relevance score to resource for semantic search
                             if semantic_search:
-                                resource["_relevance_score"] = hit.get("hitScore", 0.0)
-                                resource["_search_rank"] = hit.get(
-                                    "rank", items_returned + 1
+                                resource["_search_rank"] = rank_value
+                                # Use inverse rank as relevance score (lower rank = higher relevance)
+                                resource["_relevance_score"] = (
+                                    1.0 / rank_value if rank_value > 0 else 0.0
                                 )
 
                             yield resource

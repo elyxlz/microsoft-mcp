@@ -1274,52 +1274,72 @@ def semantic_unified_search(
 
     results = {entity_type: [] for entity_type in entity_types}
 
-    # Use enhanced search query with semantic parameters
-    items = list(
-        graph.search_query(
-            query,
-            entity_types,
-            account_id,
-            limit,
-            fields=[
-                "id",
-                "subject",
-                "from",
-                "toRecipients",
-                "receivedDateTime",
-                "hasAttachments",
-                "body",
-                "conversationId",
-                "isRead",
-                "start",
-                "end",
-                "location",
-                "attendees",
-                "organizer",
-                "categories",
-                "name",
-                "size",
-                "lastModifiedDateTime",
-                "webUrl",
-            ]
-            if include_content
-            else None,
-            semantic_search=True,
-            relevance_threshold=relevance_threshold,
-        )
-    )
+    # Microsoft Graph API doesn't support all entity type combinations
+    # Search each entity type separately and combine results
+    for entity_type in entity_types:
+        try:
+            # Use appropriate fields for each entity type
+            if entity_type == "message":
+                entity_fields = (
+                    [
+                        "id",
+                        "subject",
+                        "from",
+                        "toRecipients",
+                        "receivedDateTime",
+                        "hasAttachments",
+                        "body",
+                        "conversationId",
+                        "isRead",
+                    ]
+                    if include_content
+                    else None
+                )
+            elif entity_type == "event":
+                entity_fields = (
+                    [
+                        "id",
+                        "subject",
+                        "start",
+                        "end",
+                        "location",
+                        "body",
+                        "attendees",
+                        "organizer",
+                        "categories",
+                    ]
+                    if include_content
+                    else None
+                )
+            elif entity_type == "driveItem":
+                entity_fields = (
+                    ["id", "name", "size", "lastModifiedDateTime", "webUrl"]
+                    if include_content
+                    else None
+                )
+            else:
+                entity_fields = None
 
-    for item in items:
-        resource_type = item.get("@odata.type", "").split(".")[-1]
+            # Search this entity type with semantic parameters
+            items = list(
+                graph.search_query(
+                    query,
+                    [entity_type],  # Single entity type per request
+                    account_id,
+                    limit,
+                    fields=entity_fields,
+                    semantic_search=True,
+                    relevance_threshold=relevance_threshold,
+                )
+            )
 
-        if resource_type == "message":
-            results.setdefault("message", []).append(item)
-        elif resource_type == "event":
-            results.setdefault("event", []).append(item)
-        elif resource_type in ["driveItem", "file", "folder"]:
-            results.setdefault("driveItem", []).append(item)
-        else:
-            results.setdefault("other", []).append(item)
+            # Add results to appropriate category
+            results[entity_type].extend(items)
+
+        except Exception as e:
+            # If individual entity type fails, continue with others
+            print(f"Warning: Search failed for entity type {entity_type}: {e}")
+            continue
 
     return results
 
@@ -1346,18 +1366,15 @@ def unified_search(
 
     results = {entity_type: [] for entity_type in entity_types}
 
-    items = list(graph.search_query(query, entity_types, account_id, limit))
-
-    for item in items:
-        resource_type = item.get("@odata.type", "").split(".")[-1]
-
-        if resource_type == "message":
-            results.setdefault("message", []).append(item)
-        elif resource_type == "event":
-            results.setdefault("event", []).append(item)
-        elif resource_type in ["driveItem", "file", "folder"]:
-            results.setdefault("driveItem", []).append(item)
-        else:
-            results.setdefault("other", []).append(item)
+    # Microsoft Graph API doesn't support all entity type combinations
+    # Search each entity type separately and combine results
+    for entity_type in entity_types:
+        try:
+            items = list(graph.search_query(query, [entity_type], account_id, limit))
+            results[entity_type].extend(items)
+        except Exception as e:
+            # If individual entity type fails, continue with others
+            print(f"Warning: Search failed for entity type {entity_type}: {e}")
+            continue
 
     return {k: v for k, v in results.items() if v}
