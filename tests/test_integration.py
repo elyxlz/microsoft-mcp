@@ -716,12 +716,12 @@ async def test_get_file():
         account_info = await get_account_info(session)
         test_content = "Test file content"
         test_filename = f"mcp-test-get-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
-        
+
         # Create a temporary local file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as local_file:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as local_file:
             local_file.write(test_content)
             local_file_path = local_file.name
-        
+
         try:
             create_result = await session.call_tool(
                 "create_file",
@@ -783,13 +783,14 @@ async def test_create_file():
         test_filename = (
             f"mcp-test-create-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
         )
-        
+
         # Create a temporary local file
         import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as local_file:
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as local_file:
             local_file.write(test_content)
             local_file_path = local_file.name
-        
+
         try:
             result = await session.call_tool(
                 "create_file",
@@ -825,13 +826,14 @@ async def test_update_file():
         test_filename = (
             f"mcp-test-update-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
         )
-        
+
         # Create a temporary local file
         import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as local_file:
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as local_file:
             local_file.write(test_content)
             local_file_path = local_file.name
-        
+
         try:
             create_result = await session.call_tool(
                 "create_file",
@@ -849,12 +851,12 @@ async def test_update_file():
         file_id = file_data.get("id")
 
         updated_content = f"Updated content at {datetime.now().isoformat()}"
-        
+
         # Create a temporary local file with updated content
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as updated_file:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as updated_file:
             updated_file.write(updated_content)
             updated_file_path = updated_file.name
-        
+
         try:
             result = await session.call_tool(
                 "update_file",
@@ -886,13 +888,14 @@ async def test_delete_file():
         test_filename = (
             f"mcp-test-delete-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
         )
-        
+
         # Create a temporary local file
         import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as local_file:
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as local_file:
             local_file.write(test_content)
             local_file_path = local_file.name
-        
+
         try:
             create_result = await session.call_tool(
                 "create_file",
@@ -928,14 +931,14 @@ async def test_get_attachment():
         # First create an email with an attachment
         import tempfile
         import os
-        
+
         # Create a temporary directory and file with specific name
         temp_dir = tempfile.mkdtemp()
         temp_file_path = os.path.join(temp_dir, "test_file.txt")
-        
-        with open(temp_file_path, 'w') as f:
+
+        with open(temp_file_path, "w") as f:
             f.write("This is a test attachment content")
-        
+
         try:
             draft_result = await session.call_tool(
                 "create_email_draft",
@@ -971,9 +974,9 @@ async def test_get_attachment():
         attachment = email_detail["attachments"][0]
 
         # Test getting the attachment
-        with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as save_file:
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as save_file:
             save_path = save_file.name
-        
+
         try:
             result = await session.call_tool(
                 "get_attachment",
@@ -990,10 +993,10 @@ async def test_get_attachment():
             assert attachment_data["name"] == "test_file.txt"
             assert "saved_to" in attachment_data
             assert attachment_data["saved_to"] == save_path
-            
+
             # Verify file was saved
             assert os.path.exists(save_path)
-            with open(save_path, 'r') as f:
+            with open(save_path, "r") as f:
                 content = f.read()
                 assert content == "This is a test attachment content"
         finally:

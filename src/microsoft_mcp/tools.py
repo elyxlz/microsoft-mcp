@@ -1286,32 +1286,8 @@ def semantic_unified_search(
     Returns ranked results by semantic relevance across emails, events, and files.
     For targeted searches, use semantic_search_emails or semantic_search_calendar instead.
     """
-    # Handle various input formats for entity_types
-    if entity_types:
-        if isinstance(entity_types, str):
-            # Handle comma-separated string: "message,event" -> ["message", "event"]
-            if "," in entity_types:
-                entity_types_list = [t.strip() for t in entity_types.split(",")]
-            else:
-                # Handle single string: "message" -> ["message"]
-                entity_types_list = [entity_types]
-        else:
-            # Already a list: ["message", "event"]
-            entity_types_list = entity_types
-    else:
-        # Default case
-        entity_types_list = ["message", "event", "driveItem"]
-
-    # Validate entity types against Microsoft Graph API supported values
-    validated_types = []
-    for entity_type in entity_types_list:
-        if entity_type in VALID_ENTITY_TYPES:
-            validated_types.append(entity_type)
-        else:
-            print(f"Warning: '{entity_type}' is not a valid entity type, skipping")
-
-    # Use validated types or fall back to defaults
-    final_entity_types = validated_types or ["message", "event", "driveItem"]
+    # Search across all supported entity types
+    final_entity_types = ["message", "event", "driveItem"]
 
     results = {}  # Start with empty dict, only add entity types that have results
 
@@ -1401,32 +1377,8 @@ def unified_search(
     For natural language queries, use semantic_unified_search instead.
     For targeted searches, use semantic_search_emails or semantic_search_calendar.
     """
-    # Handle various input formats for entity_types
-    if entity_types:
-        if isinstance(entity_types, str):
-            # Handle comma-separated string: "message,event" -> ["message", "event"]
-            if "," in entity_types:
-                entity_types_list = [t.strip() for t in entity_types.split(",")]
-            else:
-                # Handle single string: "message" -> ["message"]
-                entity_types_list = [entity_types]
-        else:
-            # Already a list: ["message", "event"]
-            entity_types_list = entity_types
-    else:
-        # Default case
-        entity_types_list = ["message", "event", "driveItem"]
-
-    # Validate entity types against Microsoft Graph API supported values
-    validated_types = []
-    for entity_type in entity_types_list:
-        if entity_type in VALID_ENTITY_TYPES:
-            validated_types.append(entity_type)
-        else:
-            print(f"Warning: '{entity_type}' is not a valid entity type, skipping")
-
-    # Use validated types or fall back to defaults
-    final_entity_types = validated_types or ["message", "event", "driveItem"]
+    # Search across all supported entity types
+    final_entity_types = ["message", "event", "driveItem"]
 
     results = {}  # Start with empty dict, only add entity types that have results
 

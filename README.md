@@ -10,6 +10,7 @@ Powerful MCP server for Microsoft Graph API - a complete AI assistant toolkit fo
 - **Contacts**: Search and list contacts from your address book
 - **Multi-Account**: Support for multiple Microsoft accounts (personal, work, school)
 - **Unified Search**: Search across emails, files, events, and people
+- **Semantic Search**: Natural language search with relevance ranking and AI understanding
 
 ## Quick Start with Claude Desktop
 
@@ -39,6 +40,11 @@ claude
 > upload this report to OneDrive
 > search for "project proposal" across all my files
 
+# Semantic search examples
+> find emails about the budget meeting using semantic search
+> search for documents related to client feedback semantically
+> find everything about project alpha using natural language search
+
 # Multi-account
 > list all my Microsoft accounts
 > send email from my work account
@@ -58,6 +64,7 @@ claude
 - **`delete_email`** - Delete emails
 - **`get_attachment`** - Get email attachment content
 - **`search_emails`** - Search emails by query
+- **`semantic_search_emails`** - Advanced semantic search for emails with natural language queries
 
 ### Calendar Tools
 - **`list_events`** - List calendar events with details
@@ -68,6 +75,7 @@ claude
 - **`respond_event`** - Accept/decline/tentative response to invitations
 - **`check_availability`** - Check free/busy times for scheduling
 - **`search_events`** - Search calendar events
+- **`semantic_search_calendar`** - Advanced semantic search for calendar events with natural language queries
 
 ### Contact Tools
 - **`list_contacts`** - List all contacts
@@ -85,8 +93,11 @@ claude
 - **`delete_file`** - Delete files or folders
 - **`search_files`** - Search files in OneDrive
 
+### Search Tools
+- **`semantic_unified_search`** - Advanced semantic search across emails, events, and files with natural language queries
+- **`unified_search`** - Basic keyword search across emails, events, and files
+
 ### Utility Tools
-- **`unified_search`** - Search across emails, events, and files
 - **`list_accounts`** - Show authenticated Microsoft accounts
 - **`authenticate_account`** - Start authentication for a new Microsoft account
 - **`complete_authentication`** - Complete the authentication process after entering device code
@@ -234,6 +245,37 @@ create_event(
     location="Conference Room A",
     body="Quarterly review of project progress",
     attendees=["colleague@company.com", "manager@company.com"]
+)
+```
+
+### Semantic Search Intelligence
+```python
+# Get account ID first
+accounts = list_accounts()
+account_id = accounts[0]["account_id"]
+
+# Natural language search across all resources
+results = semantic_unified_search(
+    "find everything about the quarterly budget planning",
+    account_id,
+    limit=20,
+    relevance_threshold=0.3
+)
+
+# Semantic email search with natural language
+emails = semantic_search_emails(
+    account_id,
+    "emails from my manager about project deadlines",
+    limit=10,
+    relevance_threshold=0.2
+)
+
+# Semantic calendar search for meeting planning
+events = semantic_search_calendar(
+    account_id,
+    "meetings with the development team this month",
+    limit=15,
+    include_content=True
 )
 ```
 
