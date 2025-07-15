@@ -80,9 +80,10 @@ This is an MCP (Model Context Protocol) server that provides AI assistants with 
 
 ### Search Tool Hierarchy
 **ALWAYS use semantic search tools first for better results:**
-1. `semantic_search_emails` / `semantic_search_calendar` / `semantic_unified_search` - Natural language queries
-2. `search_emails_advanced` - Structured filtering with specific criteria
-3. `search_emails` / `search_events` / `unified_search` - Basic keyword matching (fallback only)
+1. **For targeted searches**: `semantic_search_emails` / `semantic_search_calendar` - Natural language queries for specific resource types
+2. **For cross-resource searches**: `semantic_unified_search` - Natural language queries across emails, events, and files
+3. **For structured filtering**: `search_emails_advanced` - Precise filters (dates, senders, folders)
+4. **Fallback only**: `search_emails` / `search_events` / `unified_search` - Basic keyword matching
 
 ## Color System for Calendar Categories
 Supports 25 color presets mapped to natural language:

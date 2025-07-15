@@ -1264,7 +1264,6 @@ def search_contacts(
 def semantic_unified_search(
     query: str,
     account_id: str,
-    entity_types: str | list[str] | None = None,
     limit: int = 50,
     include_content: bool = True,
     relevance_threshold: float = 0.0,
@@ -1275,18 +1274,17 @@ def semantic_unified_search(
     - Natural language queries ("find everything about project alpha")
     - Conceptual searches ("documents and emails about budget planning")
     - Intent-based searches ("meetings and files related to client feedback")
-    - Relevance-ranked results across all resources
+    - Relevance-ranked results across emails, calendar events, and files
 
     Args:
         query: Natural language or keyword query
         account_id: Microsoft account ID
-        entity_types: Resource types to search (['message', 'event', 'driveItem'] by default)
         limit: Maximum number of results per type (default: 50)
         include_content: Include content for better semantic matching
         relevance_threshold: Minimum relevance score (0.0-1.0) to include results
 
-    Returns ranked results by semantic relevance across all specified resource types.
-    Falls back to unified_search for basic keyword matching if needed.
+    Returns ranked results by semantic relevance across emails, events, and files.
+    For targeted searches, use semantic_search_emails or semantic_search_calendar instead.
     """
     # Handle various input formats for entity_types
     if entity_types:
@@ -1392,7 +1390,6 @@ def semantic_unified_search(
 def unified_search(
     query: str,
     account_id: str,
-    entity_types: str | list[str] | None = None,
     limit: int = 50,
 ) -> dict[str, list[dict[str, Any]]]:
     """Search across multiple Microsoft 365 resources using basic keyword matching.
@@ -1400,10 +1397,9 @@ def unified_search(
     FALLBACK UNIFIED SEARCH TOOL: Use semantic_unified_search for better results.
     Only use this for simple keyword searches or when semantic search fails.
 
-    entity_types can include: 'message', 'event', 'drive', 'driveItem', 'list', 'listItem', 'site'
-    If not specified, searches across all available types.
-
+    Searches across emails, calendar events, and files using basic keyword matching.
     For natural language queries, use semantic_unified_search instead.
+    For targeted searches, use semantic_search_emails or semantic_search_calendar.
     """
     # Handle various input formats for entity_types
     if entity_types:

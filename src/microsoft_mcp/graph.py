@@ -356,11 +356,6 @@ def search_query(
 
                             resource = hit["resource"]
 
-                            # DEBUG: Add debug info to response for LLM to see
-                            resource_type = resource.get("@odata.type", "unknown")
-                            resource["_debug_requested_types"] = entity_types
-                            resource["_debug_actual_type"] = resource_type
-
                             # Add relevance score to resource for semantic search
                             if semantic_search:
                                 resource["_search_rank"] = rank_value
