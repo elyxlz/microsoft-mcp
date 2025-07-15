@@ -3,7 +3,26 @@ import datetime as dt
 import pathlib as pl
 from typing import Any
 from fastmcp import FastMCP
-from . import graph, auth
+from . import graph
+
+# Valid entity types based on Microsoft Graph API documentation
+VALID_ENTITY_TYPES = (
+    {
+        "event",
+        "message",
+        "driveItem",
+        "externalItem",
+        "site",
+        "list",
+        "listItem",
+        "drive",
+        "chatMessage",
+        "person",
+        "acronym",
+        "bookmark",
+    },
+    auth,
+)
 
 mcp = FastMCP("microsoft-mcp")
 
@@ -1269,10 +1288,34 @@ def semantic_unified_search(
     Returns ranked results by semantic relevance across all specified resource types.
     Falls back to unified_search for basic keyword matching if needed.
     """
-    if not entity_types:
-        entity_types = ["message", "event", "driveItem"]
+    # Handle various input formats for entity_types
+    if entity_types:
+        if isinstance(entity_types, str):
+            # Handle comma-separated string: "message,event" -> ["message", "event"]
+            if "," in entity_types:
+                entity_types_list = [t.strip() for t in entity_types.split(",")]
+            else:
+                # Handle single string: "message" -> ["message"]
+                entity_types_list = [entity_types]
+        else:
+            # Already a list: ["message", "event"]
+            entity_types_list = entity_types
+    else:
+        # Default case
+        entity_types_list = ["message", "event", "driveItem"]
 
-    results = {entity_type: [] for entity_type in entity_types}
+    # Validate entity types against Microsoft Graph API supported values
+    validated_types = []
+    for entity_type in entity_types_list:
+        if entity_type in VALID_ENTITY_TYPES:
+            validated_types.append(entity_type)
+        else:
+            print(f"Warning: '{entity_type}' is not a valid entity type, skipping")
+
+    # Use validated types or fall back to defaults
+    final_entity_types = validated_types or ["message", "event", "driveItem"]
+
+    results = {entity_type: [] for entity_type in final_entity_types}
 
     # Microsoft Graph API doesn't support all entity type combinations
     # Search each entity type separately and combine results
@@ -1361,14 +1404,38 @@ def unified_search(
 
     For natural language queries, use semantic_unified_search instead.
     """
-    if not entity_types:
-        entity_types = ["message", "event", "driveItem"]
+    # Handle various input formats for entity_types
+    if entity_types:
+        if isinstance(entity_types, str):
+            # Handle comma-separated string: "message,event" -> ["message", "event"]
+            if "," in entity_types:
+                entity_types_list = [t.strip() for t in entity_types.split(",")]
+            else:
+                # Handle single string: "message" -> ["message"]
+                entity_types_list = [entity_types]
+        else:
+            # Already a list: ["message", "event"]
+            entity_types_list = entity_types
+    else:
+        # Default case
+        entity_types_list = ["message", "event", "driveItem"]
 
-    results = {entity_type: [] for entity_type in entity_types}
+    # Validate entity types against Microsoft Graph API supported values
+    validated_types = []
+    for entity_type in entity_types_list:
+        if entity_type in VALID_ENTITY_TYPES:
+            validated_types.append(entity_type)
+        else:
+            print(f"Warning: '{entity_type}' is not a valid entity type, skipping")
+
+    # Use validated types or fall back to defaults
+    final_entity_types = validated_types or ["message", "event", "driveItem"]
+
+    results = {entity_type: [] for entity_type in final_entity_types}
 
     # Microsoft Graph API doesn't support all entity type combinations
     # Search each entity type separately and combine results
-    for entity_type in entity_types:
+    for entity_type in final_entity_types:
         try:
             items = list(graph.search_query(query, [entity_type], account_id, limit))
             results[entity_type].extend(items)
