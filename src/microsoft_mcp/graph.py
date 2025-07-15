@@ -289,6 +289,7 @@ def search_query(
                 "query": {"queryString": query},
                 "size": min(limit, 25),
                 "from": 0,
+                "includeHiddenContent": True,
             }
         ]
     }

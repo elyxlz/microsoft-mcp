@@ -866,7 +866,15 @@ def search_emails(
     limit: int = 50,
     folder: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Search emails using the modern search API."""
+    """Search emails using the modern search API.
+
+    Search Scope:
+    - Default (no folder): Searches across most folders using Microsoft Search API
+    - Archive folders: May require explicit specification with folder="archive"
+    - If expected emails don't appear, try folder="archive", folder="sent", or folder="inbox"
+
+    For advanced filtering (sender, subject, dates), use search_emails_advanced instead.
+    """
     if folder:
         # For folder-specific search, use the traditional endpoint
         folder_path = FOLDERS.get(folder.casefold(), folder)
@@ -909,15 +917,19 @@ def search_emails_advanced(
         subject_contains: Text that must appear in the subject line
         date_after: ISO date string (e.g., "2025-01-01") for emails received after this date
         date_before: ISO date string (e.g., "2025-12-31") for emails received before this date
-        folder: Folder to search in - empty string (default) searches all folders, or specify "inbox", "sent", "drafts", etc.
+        folder: Folder to search in - empty string (default) searches most folders, or specify "inbox", "sent", "drafts", "archive", etc.
         has_attachments: Filter for emails with attachments (True) or without (False)
         is_read: Filter for read emails (True) or unread emails (False)
         importance: Filter by importance level ("high", "normal", "low")
         content_level: Content detail level - "summary", "preview", or "full"
         limit: Maximum number of results to return
 
-    Default behavior: Searches across all folders (inbox, sent, archive, etc.) like search_emails.
-    Specify folder parameter to limit search to specific folder.
+    Search Scope:
+    - Default (folder=""): Searches across most folders (inbox, sent, drafts, deleted items)
+    - Archive folders: May require explicit specification with folder="archive"
+    - If expected emails don't appear, try folder="archive", folder="sent", or folder="inbox"
+
+    Specify folder parameter to limit search to specific folder or to access archive.
     """
     # STAGE 1: Build API-level filters for proven working fields
     api_filter_parts = []
