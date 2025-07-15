@@ -1376,8 +1376,9 @@ def semantic_unified_search(
                 )
             )
 
-            # Add results to appropriate category
-            results[entity_type].extend(items)
+            # Only add to results if there are actual items
+            if items:
+                results[entity_type] = items
 
         except Exception as e:
             # If individual entity type fails, continue with others
@@ -1438,10 +1439,12 @@ def unified_search(
     for entity_type in final_entity_types:
         try:
             items = list(graph.search_query(query, [entity_type], account_id, limit))
-            results[entity_type].extend(items)
+            # Only add to results if there are actual items
+            if items:
+                results[entity_type] = items
         except Exception as e:
             # If individual entity type fails, continue with others
             print(f"Warning: Search failed for entity type {entity_type}: {e}")
             continue
 
-    return {k: v for k, v in results.items() if v}
+    return results
