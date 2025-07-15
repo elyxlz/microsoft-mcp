@@ -1315,7 +1315,7 @@ def semantic_unified_search(
     # Use validated types or fall back to defaults
     final_entity_types = validated_types or ["message", "event", "driveItem"]
 
-    results = {entity_type: [] for entity_type in final_entity_types}
+    results = {}  # Start with empty dict, only add entity types that have results
 
     # Microsoft Graph API doesn't support all entity type combinations
     # Search each entity type separately and combine results
@@ -1432,7 +1432,7 @@ def unified_search(
     # Use validated types or fall back to defaults
     final_entity_types = validated_types or ["message", "event", "driveItem"]
 
-    results = {entity_type: [] for entity_type in final_entity_types}
+    results = {}  # Start with empty dict, only add entity types that have results
 
     # Microsoft Graph API doesn't support all entity type combinations
     # Search each entity type separately and combine results
