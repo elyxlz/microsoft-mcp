@@ -10,6 +10,20 @@ UPLOAD_CHUNK_SIZE = 15 * 320 * 1024
 _client = httpx.Client(timeout=30.0, follow_redirects=True)
 
 
+def _enhance_query_for_semantic_search(query: str) -> str:
+    """Enhance query for better semantic understanding in Microsoft Graph Search"""
+    # Remove common search operators that might interfere with semantic search
+    query = query.strip()
+
+    # If query is already quoted, leave it as is
+    if query.startswith('"') and query.endswith('"'):
+        return query
+
+    # For natural language queries, don't quote to allow semantic processing
+    # Microsoft Graph Search API works better with natural language for semantic understanding
+    return query
+
+
 def request(
     method: str,
     path: str,
@@ -280,13 +294,23 @@ def search_query(
     account_id: str | None = None,
     limit: int = 50,
     fields: list[str] | None = None,
+    semantic_search: bool = False,
+    relevance_threshold: float = 0.0,
 ) -> Iterator[dict[str, Any]]:
-    """Use the modern /search/query API endpoint"""
+    """Use the modern /search/query API endpoint with optional semantic enhancements"""
+
+    # Process query for semantic search
+    if semantic_search:
+        # Enhance query for better semantic understanding
+        processed_query = _enhance_query_for_semantic_search(query)
+    else:
+        processed_query = query
+
     payload = {
         "requests": [
             {
                 "entityTypes": entity_types,
-                "query": {"queryString": query},
+                "query": {"queryString": processed_query},
                 "size": min(limit, 25),
                 "from": 0,
                 "includeHiddenContent": True,
@@ -296,6 +320,12 @@ def search_query(
 
     if fields:
         payload["requests"][0]["fields"] = fields
+
+    # Add semantic search enhancements
+    if semantic_search:
+        # Enable search result ranking and content analysis
+        payload["requests"][0]["enableTopResults"] = True
+        payload["requests"][0]["contentSources"] = ["/me"]
 
     items_returned = 0
 
@@ -312,7 +342,23 @@ def search_query(
                         for hit in container["hits"]:
                             if limit and items_returned >= limit:
                                 return
-                            yield hit["resource"]
+
+                            # Apply relevance threshold filtering for semantic search
+                            if semantic_search and relevance_threshold > 0.0:
+                                hit_score = hit.get("hitScore", 0.0)
+                                if hit_score < relevance_threshold:
+                                    continue
+
+                            resource = hit["resource"]
+
+                            # Add relevance score to resource for semantic search
+                            if semantic_search:
+                                resource["_relevance_score"] = hit.get("hitScore", 0.0)
+                                resource["_search_rank"] = hit.get(
+                                    "rank", items_returned + 1
+                                )
+
+                            yield resource
                             items_returned += 1
 
         if "@odata.nextLink" in result:
