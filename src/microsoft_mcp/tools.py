@@ -1245,7 +1245,7 @@ def search_contacts(
 def semantic_unified_search(
     query: str,
     account_id: str,
-    entity_types: list[str] | None = None,
+    entity_types: str | list[str] | None = None,
     limit: int = 50,
     include_content: bool = True,
     relevance_threshold: float = 0.0,
@@ -1348,7 +1348,7 @@ def semantic_unified_search(
 def unified_search(
     query: str,
     account_id: str,
-    entity_types: list[str] | None = None,
+    entity_types: str | list[str] | None = None,
     limit: int = 50,
 ) -> dict[str, list[dict[str, Any]]]:
     """Search across multiple Microsoft 365 resources using basic keyword matching.
