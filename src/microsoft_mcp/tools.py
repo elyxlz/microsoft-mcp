@@ -916,42 +916,61 @@ def search_emails_advanced(
         content_level: Content detail level - "summary", "preview", or "full"
         limit: Maximum number of results to return
     """
-    # Build OData filter conditions for structured parameters
-    filter_parts = []
+    # Build KQL search query using documented Microsoft Graph syntax
+    kql_parts = []
 
-    # Boolean filters
+    # Add free-text query if provided
+    if query:
+        kql_parts.append(query)
+
+    # Boolean filters using documented KQL syntax
     if has_attachments:
-        filter_parts.append("hasAttachments eq true")
+        kql_parts.append("hasAttachments:true")
     if not is_read:
-        filter_parts.append("isRead eq false")
+        kql_parts.append("isread:false")
 
-    # String filters
+    # String filters using documented KQL syntax
     if sender:
-        if "@" in sender and not sender.startswith("@"):
-            # Exact email address
-            filter_parts.append(f"from/emailAddress/address eq '{sender}'")
-        else:
-            # Domain or partial match
-            filter_parts.append(f"contains(from/emailAddress/address,'{sender}')")
+        # Use documented "from:" syntax for sender search
+        kql_parts.append(f"from:{sender}")
 
     if subject_contains:
-        filter_parts.append(f"contains(subject,'{subject_contains}')")
+        # Use documented "subject:" syntax
+        kql_parts.append(f"subject:{subject_contains}")
 
-    # Date filters (convert to ISO 8601)
+    # Date filters using documented "received:" syntax
     if date_after:
-        iso_date = f"{date_after}T00:00:00Z" if "T" not in date_after else date_after
-        filter_parts.append(f"receivedDateTime ge {iso_date}")
+        # Convert to MM/DD/YYYY format as shown in documentation
+        if "-" in date_after:  # Convert from ISO format
+            try:
+                year, month, day = date_after.split("-")
+                date_formatted = f"{month}/{day}/{year}"
+                kql_parts.append(f"received>={date_formatted}")
+            except ValueError:
+                # Fallback to original format if parsing fails
+                kql_parts.append(f"received>={date_after}")
+        else:
+            kql_parts.append(f"received>={date_after}")
 
     if date_before:
-        iso_date = f"{date_before}T23:59:59Z" if "T" not in date_before else date_before
-        filter_parts.append(f"receivedDateTime le {iso_date}")
+        # Convert to MM/DD/YYYY format as shown in documentation
+        if "-" in date_before:  # Convert from ISO format
+            try:
+                year, month, day = date_before.split("-")
+                date_formatted = f"{month}/{day}/{year}"
+                kql_parts.append(f"received<={date_formatted}")
+            except ValueError:
+                # Fallback to original format if parsing fails
+                kql_parts.append(f"received<={date_before}")
+        else:
+            kql_parts.append(f"received<={date_before}")
 
-    # Importance filter
+    # Importance filter using documented syntax
     if importance:
-        filter_parts.append(f"importance eq '{importance.lower()}'")
+        kql_parts.append(f"importance:{importance.lower()}")
 
-    # Combine filters with 'and'
-    filter_query = " and ".join(filter_parts) if filter_parts else ""
+    # Combine all KQL parts with AND
+    search_query = " AND ".join(kql_parts) if kql_parts else ""
 
     # Define field selection based on content_level
     if content_level == "summary":
@@ -971,17 +990,10 @@ def search_emails_advanced(
         "$orderby": "receivedDateTime desc",
     }
 
-    # Use appropriate API parameter based on what we have
-    if query and filter_query:
-        # Both free-text search and structured filters - prioritize filters
-        params["$filter"] = filter_query
-        # Note: Microsoft Graph doesn't easily combine $search and $filter
-    elif filter_query:
-        # Only structured filtering
-        params["$filter"] = filter_query
-    elif query:
-        # Only free-text search
-        params["$search"] = f'"{query}"'
+    # Use $search with KQL syntax for all filtering (documented approach)
+    if search_query:
+        # Use documented KQL syntax with proper quoting
+        params["$search"] = f'"{search_query}"'
 
     return list(
         graph.request_paginated(endpoint, account_id, params=params, limit=limit)
