@@ -356,6 +356,12 @@ def search_query(
 
                             resource = hit["resource"]
 
+                            # DEBUG: Log what the API is actually returning vs what was requested
+                            resource_type = resource.get("@odata.type", "unknown")
+                            print(
+                                f"DEBUG: Requested entity_types={entity_types}, Got @odata.type={resource_type}"
+                            )
+
                             # Add relevance score to resource for semantic search
                             if semantic_search:
                                 resource["_search_rank"] = rank_value
