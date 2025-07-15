@@ -1274,7 +1274,7 @@ def semantic_unified_search(
     - Natural language queries ("find everything about project alpha")
     - Conceptual searches ("documents and emails about budget planning")
     - Intent-based searches ("meetings and files related to client feedback")
-    - Relevance-ranked results across emails, calendar events, and files
+    - Relevance-ranked results across all resources
 
     Args:
         query: Natural language or keyword query
