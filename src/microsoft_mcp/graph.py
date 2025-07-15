@@ -323,9 +323,10 @@ def search_query(
 
     # Add semantic search enhancements
     if semantic_search:
-        # Enable search result ranking and content analysis
-        payload["requests"][0]["enableTopResults"] = True
-        payload["requests"][0]["contentSources"] = ["/me"]
+        # Enable top results only for messages (not supported for events/driveItems)
+        if "message" in entity_types:
+            payload["requests"][0]["enableTopResults"] = True
+        # Note: contentSources is for external connections, not needed for basic search
 
     items_returned = 0
 
