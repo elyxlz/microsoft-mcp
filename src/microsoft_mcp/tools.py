@@ -916,32 +916,42 @@ def search_emails_advanced(
         content_level: Content detail level - "summary", "preview", or "full"
         limit: Maximum number of results to return
     """
-    # Build KQL (Keyword Query Language) search string
-    kql_parts = []
+    # Build OData filter conditions for structured parameters
+    filter_parts = []
 
-    if query:
-        kql_parts.append(query)
+    # Boolean filters
+    if has_attachments:
+        filter_parts.append("hasAttachments eq true")
+    if not is_read:
+        filter_parts.append("isRead eq false")
+
+    # String filters
     if sender:
         if "@" in sender and not sender.startswith("@"):
-            kql_parts.append(f"from:{sender}")
+            # Exact email address
+            filter_parts.append(f"from/emailAddress/address eq '{sender}'")
         else:
-            kql_parts.append(f'from:"{sender}"')
+            # Domain or partial match
+            filter_parts.append(f"contains(from/emailAddress/address,'{sender}')")
+
     if subject_contains:
-        kql_parts.append(f'subject:"{subject_contains}"')
+        filter_parts.append(f"contains(subject,'{subject_contains}')")
+
+    # Date filters (convert to ISO 8601)
     if date_after:
-        kql_parts.append(f"received>={date_after}")
+        iso_date = f"{date_after}T00:00:00Z" if "T" not in date_after else date_after
+        filter_parts.append(f"receivedDateTime ge {iso_date}")
+
     if date_before:
-        kql_parts.append(f"received<={date_before}")
+        iso_date = f"{date_before}T23:59:59Z" if "T" not in date_before else date_before
+        filter_parts.append(f"receivedDateTime le {iso_date}")
+
+    # Importance filter
     if importance:
-        kql_parts.append(f"importance:{importance.lower()}")
+        filter_parts.append(f"importance eq '{importance.lower()}'")
 
-    # Add boolean filters to KQL
-    if has_attachments:
-        kql_parts.append("hasattachments:true")
-    if not is_read:
-        kql_parts.append("isread:false")
-
-    search_query = " AND ".join(kql_parts) if kql_parts else ""
+    # Combine filters with 'and'
+    filter_query = " and ".join(filter_parts) if filter_parts else ""
 
     # Define field selection based on content_level
     if content_level == "summary":
@@ -951,7 +961,7 @@ def search_emails_advanced(
     else:  # full
         select_fields = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,body,conversationId,isRead"
 
-    # Use folder-specific search
+    # Use folder-specific search/filtering
     folder_path = FOLDERS.get(folder.casefold(), folder)
     endpoint = f"/me/mailFolders/{folder_path}/messages"
 
@@ -961,8 +971,17 @@ def search_emails_advanced(
         "$orderby": "receivedDateTime desc",
     }
 
-    if search_query:
-        params["$search"] = f'"{search_query}"'
+    # Use appropriate API parameter based on what we have
+    if query and filter_query:
+        # Both free-text search and structured filters - prioritize filters
+        params["$filter"] = filter_query
+        # Note: Microsoft Graph doesn't easily combine $search and $filter
+    elif filter_query:
+        # Only structured filtering
+        params["$filter"] = filter_query
+    elif query:
+        # Only free-text search
+        params["$search"] = f'"{query}"'
 
     return list(
         graph.request_paginated(endpoint, account_id, params=params, limit=limit)
