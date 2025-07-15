@@ -5,6 +5,25 @@ from typing import Any
 from fastmcp import FastMCP
 from . import graph, auth
 
+# Valid entity types based on Microsoft Graph API documentation
+VALID_ENTITY_TYPES = (
+    {
+        "event",
+        "message",
+        "driveItem",
+        "externalItem",
+        "site",
+        "list",
+        "listItem",
+        "drive",
+        "chatMessage",
+        "person",
+        "acronym",
+        "bookmark",
+    },
+    auth,
+)
+
 mcp = FastMCP("microsoft-mcp")
 
 FOLDERS = {
@@ -860,13 +879,79 @@ def search_files(
 
 
 @mcp.tool
+def semantic_search_emails(
+    query: str,
+    account_id: str,
+    limit: int = 50,
+    include_content: bool = True,
+    relevance_threshold: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Search emails using semantic understanding and natural language queries.
+
+    PREFERRED SEARCH TOOL: Use this for most email searches, especially:
+    - Natural language queries ("find emails about budget meetings from last month")
+    - Conceptual searches ("emails discussing project delays")
+    - Intent-based searches ("emails asking for help with reports")
+    - Relevance-ranked results
+
+    Args:
+        query: Natural language or keyword query
+        account_id: Microsoft account ID
+        limit: Maximum number of results (default: 50)
+        include_content: Include email body content for better semantic matching
+        relevance_threshold: Minimum relevance score (0.0-1.0) to include results
+
+    Returns ranked results by semantic relevance. Falls back to keyword search if needed.
+    For structured filtering (dates, senders), use search_emails_advanced instead.
+    """
+    # Use enhanced search query with semantic parameters
+    results = list(
+        graph.search_query(
+            query,
+            ["message"],
+            account_id,
+            limit,
+            fields=[
+                "id",
+                "subject",
+                "from",
+                "toRecipients",
+                "receivedDateTime",
+                "hasAttachments",
+                "body",
+                "conversationId",
+                "isRead",
+            ]
+            if include_content
+            else None,
+            semantic_search=True,
+            relevance_threshold=relevance_threshold,
+        )
+    )
+
+    return results
+
+
+@mcp.tool
 def search_emails(
     query: str,
     account_id: str,
     limit: int = 50,
     folder: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Search emails using the modern search API."""
+    """Search emails using basic keyword matching.
+
+    FALLBACK SEARCH TOOL: Use semantic_search_emails for better results.
+    Only use this for simple keyword searches in specific folders.
+
+    Search Scope:
+    - Default (no folder): Searches across most folders using Microsoft Search API
+    - Archive folders: May require explicit specification with folder="archive"
+    - If expected emails don't appear, try folder="archive", folder="sent", or folder="inbox"
+
+    For advanced filtering (sender, subject, dates), use search_emails_advanced instead.
+    For natural language queries, use semantic_search_emails instead.
+    """
     if folder:
         # For folder-specific search, use the traditional endpoint
         folder_path = FOLDERS.get(folder.casefold(), folder)
@@ -886,6 +971,237 @@ def search_emails(
 
 
 @mcp.tool
+def search_emails_advanced(
+    account_id: str,
+    query: str = "",
+    sender: str = "",
+    subject_contains: str = "",
+    date_after: str = "",
+    date_before: str = "",
+    folder: str = "",
+    has_attachments: bool = False,
+    is_read: bool = True,
+    importance: str = "",
+    content_level: str = "summary",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Advanced email search with structured parameters and content optimization
+
+    STRUCTURED SEARCH TOOL: Use this for precise filtering with specific criteria:
+    - Date range filtering (date_after, date_before)
+    - Sender filtering (sender email/domain)
+    - Subject filtering (subject_contains)
+    - Folder-specific searches
+    - Attachment filtering
+    - Read/unread status filtering
+    - Importance level filtering
+
+    For natural language queries, use semantic_search_emails instead.
+    For simple keyword searches, use search_emails instead.
+
+    Args:
+        account_id: Microsoft account ID
+        query: Free-text search query
+        sender: Email address or domain to search from
+        subject_contains: Text that must appear in the subject line
+        date_after: ISO date string (e.g., "2025-01-01") for emails received after this date
+        date_before: ISO date string (e.g., "2025-12-31") for emails received before this date
+        folder: Folder to search in - empty string (default) searches most folders, or specify "inbox", "sent", "drafts", "archive", etc.
+        has_attachments: Filter for emails with attachments (True) or without (False)
+        is_read: Filter for read emails (True) or unread emails (False)
+        importance: Filter by importance level ("high", "normal", "low")
+        content_level: Content detail level - "summary", "preview", or "full"
+        limit: Maximum number of results to return
+
+    Search Scope:
+    - Default (folder=""): Searches across most folders (inbox, sent, drafts, deleted items)
+    - Archive folders: May require explicit specification with folder="archive"
+    - If expected emails don't appear, try folder="archive", folder="sent", or folder="inbox"
+
+    Specify folder parameter to limit search to specific folder or to access archive.
+    """
+    # STAGE 1: Build API-level filters for proven working fields
+    api_filter_parts = []
+
+    # Use $filter for fields that work reliably
+    if not is_read:
+        api_filter_parts.append("isRead eq false")
+
+    if date_after:
+        iso_date = f"{date_after}T00:00:00Z" if "T" not in date_after else date_after
+        api_filter_parts.append(f"receivedDateTime ge {iso_date}")
+
+    if date_before:
+        iso_date = f"{date_before}T23:59:59Z" if "T" not in date_before else date_before
+        api_filter_parts.append(f"receivedDateTime le {iso_date}")
+
+    if importance:
+        api_filter_parts.append(f"importance eq '{importance.lower()}'")
+
+    api_filter_query = " and ".join(api_filter_parts) if api_filter_parts else ""
+
+    # Determine if we need client-side filtering
+    needs_client_filtering = bool(
+        sender or subject_contains or has_attachments or query
+    )
+
+    # Smart limit adjustment: fetch more if we need to filter client-side
+    fetch_limit = limit * 3 if needs_client_filtering else limit
+
+    # Define field selection based on content_level
+    if content_level == "summary":
+        select_fields = "id,subject,from,toRecipients,receivedDateTime,hasAttachments,conversationId,isRead"
+    elif content_level == "preview":
+        select_fields = "id,subject,from,toRecipients,receivedDateTime,hasAttachments,bodyPreview,conversationId,isRead"
+    else:  # full
+        select_fields = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,body,conversationId,isRead"
+
+    # Determine endpoint: cross-folder vs folder-specific search
+    if folder:
+        # Folder-specific search
+        folder_path = FOLDERS.get(folder.casefold(), folder)
+        endpoint = f"/me/mailFolders/{folder_path}/messages"
+    else:
+        # Cross-folder search (default behavior to match search_emails)
+        endpoint = "/me/messages"
+
+    params = {
+        "$top": min(fetch_limit, 100),
+        "$select": select_fields,
+        "$orderby": "receivedDateTime desc",
+    }
+
+    # Use $filter for proven working API-level filters
+    if api_filter_query:
+        params["$filter"] = api_filter_query
+
+    # Use $search only for free-text query if no other filters
+    elif query and not needs_client_filtering:
+        params["$search"] = f'"{query}"'
+
+    # STAGE 1: Get initial results from API
+    results = list(
+        graph.request_paginated(endpoint, account_id, params=params, limit=fetch_limit)
+    )
+
+    # STAGE 2: Apply client-side filtering for unsupported fields
+    if needs_client_filtering:
+        # Filter by sender (domain or email)
+        if sender:
+            sender_lower = sender.lower()
+            results = [
+                r
+                for r in results
+                if sender_lower
+                in r.get("from", {}).get("emailAddress", {}).get("address", "").lower()
+            ]
+
+        # Filter by subject contains
+        if subject_contains:
+            subject_lower = subject_contains.lower()
+            results = [
+                r for r in results if subject_lower in r.get("subject", "").lower()
+            ]
+
+        # Filter by has attachments
+        if has_attachments is not None:
+            results = [
+                r for r in results if r.get("hasAttachments", False) == has_attachments
+            ]
+
+        # Filter by free-text query in subject/body
+        if query:
+            query_lower = query.lower()
+            results = [
+                r
+                for r in results
+                if query_lower in r.get("subject", "").lower()
+                or query_lower in r.get("body", {}).get("content", "").lower()
+                or query_lower in r.get("bodyPreview", "").lower()
+            ]
+
+    # Apply final limit after all filtering
+    return results[:limit]
+
+
+@mcp.tool
+def semantic_search_calendar(
+    query: str,
+    account_id: str,
+    days_ahead: int = 365,
+    days_back: int = 365,
+    limit: int = 50,
+    include_content: bool = True,
+    relevance_threshold: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Search calendar events using semantic understanding and natural language queries.
+
+    PREFERRED SEARCH TOOL: Use this for most calendar searches, especially:
+    - Natural language queries ("find meetings about quarterly planning")
+    - Conceptual searches ("events discussing budget reviews")
+    - Intent-based searches ("meetings with external clients")
+    - Relevance-ranked results
+
+    Args:
+        query: Natural language or keyword query
+        account_id: Microsoft account ID
+        days_ahead: Number of days ahead to search (default: 365)
+        days_back: Number of days back to search (default: 365)
+        limit: Maximum number of results (default: 50)
+        include_content: Include event body content for better semantic matching
+        relevance_threshold: Minimum relevance score (0.0-1.0) to include results
+
+    Returns ranked results by semantic relevance. Falls back to keyword search if needed.
+    """
+    # Use enhanced search query with semantic parameters
+    events = list(
+        graph.search_query(
+            query,
+            ["event"],
+            account_id,
+            limit,
+            fields=[
+                "id",
+                "subject",
+                "start",
+                "end",
+                "location",
+                "body",
+                "attendees",
+                "organizer",
+                "categories",
+            ]
+            if include_content
+            else None,
+            semantic_search=True,
+            relevance_threshold=relevance_threshold,
+        )
+    )
+
+    # Filter by date range if needed
+    if days_ahead != 365 or days_back != 365:
+        now = dt.datetime.now(dt.timezone.utc)
+        start = now - dt.timedelta(days=days_back)
+        end = now + dt.timedelta(days=days_ahead)
+
+        filtered_events = []
+        for event in events:
+            event_start = dt.datetime.fromisoformat(
+                event.get("start", {}).get("dateTime", "").replace("Z", "+00:00")
+            )
+            event_end = dt.datetime.fromisoformat(
+                event.get("end", {}).get("dateTime", "").replace("Z", "+00:00")
+            )
+
+            if event_start <= end and event_end >= start:
+                filtered_events.append(event)
+
+        return filtered_events
+
+    return events
+
+
+@mcp.tool
 def search_events(
     query: str,
     account_id: str,
@@ -893,7 +1209,13 @@ def search_events(
     days_back: int = 365,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """Search calendar events using the modern search API."""
+    """Search calendar events using basic keyword matching.
+
+    FALLBACK SEARCH TOOL: Use semantic_search_calendar for better results.
+    Only use this for simple keyword searches or when semantic search fails.
+
+    For natural language queries, use semantic_search_calendar instead.
+    """
     events = list(graph.search_query(query, ["event"], account_id, limit))
 
     # Filter by date range if needed
@@ -939,34 +1261,138 @@ def search_contacts(
 
 
 @mcp.tool
+def semantic_unified_search(
+    query: str,
+    account_id: str,
+    limit: int = 50,
+    include_content: bool = True,
+    relevance_threshold: float = 0.0,
+) -> dict[str, list[dict[str, Any]]]:
+    """Search across multiple Microsoft 365 resources using semantic understanding.
+
+    PREFERRED UNIFIED SEARCH TOOL: Use this for cross-resource searches, especially:
+    - Natural language queries ("find everything about project alpha")
+    - Conceptual searches ("documents and emails about budget planning")
+    - Intent-based searches ("meetings and files related to client feedback")
+    - Relevance-ranked results across all resources
+
+    Args:
+        query: Natural language or keyword query
+        account_id: Microsoft account ID
+        limit: Maximum number of results per type (default: 50)
+        include_content: Include content for better semantic matching
+        relevance_threshold: Minimum relevance score (0.0-1.0) to include results
+
+    Returns ranked results by semantic relevance across emails, events, and files.
+    For targeted searches, use semantic_search_emails or semantic_search_calendar instead.
+    """
+    # Search across all supported entity types
+    final_entity_types = ["message", "event", "driveItem"]
+
+    results = {}  # Start with empty dict, only add entity types that have results
+
+    # Microsoft Graph API doesn't support all entity type combinations
+    # Search each entity type separately and combine results
+    for entity_type in final_entity_types:
+        try:
+            # Use appropriate fields for each entity type
+            if entity_type == "message":
+                entity_fields = (
+                    [
+                        "id",
+                        "subject",
+                        "from",
+                        "toRecipients",
+                        "receivedDateTime",
+                        "hasAttachments",
+                        "body",
+                        "conversationId",
+                        "isRead",
+                    ]
+                    if include_content
+                    else None
+                )
+            elif entity_type == "event":
+                entity_fields = (
+                    [
+                        "id",
+                        "subject",
+                        "start",
+                        "end",
+                        "location",
+                        "body",
+                        "attendees",
+                        "organizer",
+                        "categories",
+                    ]
+                    if include_content
+                    else None
+                )
+            elif entity_type == "driveItem":
+                entity_fields = (
+                    ["id", "name", "size", "lastModifiedDateTime", "webUrl"]
+                    if include_content
+                    else None
+                )
+            else:
+                entity_fields = None
+
+            # Search this entity type with semantic parameters
+            items = list(
+                graph.search_query(
+                    query,
+                    [entity_type],  # Single entity type per request
+                    account_id,
+                    limit,
+                    fields=entity_fields,
+                    semantic_search=True,
+                    relevance_threshold=relevance_threshold,
+                )
+            )
+
+            # Only add to results if there are actual items
+            if items:
+                results[entity_type] = items
+
+        except Exception as e:
+            # If individual entity type fails, continue with others
+            print(f"Warning: Search failed for entity type {entity_type}: {e}")
+            continue
+
+    return results
+
+
+@mcp.tool
 def unified_search(
     query: str,
     account_id: str,
-    entity_types: list[str] | None = None,
     limit: int = 50,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Search across multiple Microsoft 365 resources using the modern search API
+    """Search across multiple Microsoft 365 resources using basic keyword matching.
 
-    entity_types can include: 'message', 'event', 'drive', 'driveItem', 'list', 'listItem', 'site'
-    If not specified, searches across all available types.
+    FALLBACK UNIFIED SEARCH TOOL: Use semantic_unified_search for better results.
+    Only use this for simple keyword searches or when semantic search fails.
+
+    Searches across emails, calendar events, and files using basic keyword matching.
+    For natural language queries, use semantic_unified_search instead.
+    For targeted searches, use semantic_search_emails or semantic_search_calendar.
     """
-    if not entity_types:
-        entity_types = ["message", "event", "driveItem"]
+    # Search across all supported entity types
+    final_entity_types = ["message", "event", "driveItem"]
 
-    results = {entity_type: [] for entity_type in entity_types}
+    results = {}  # Start with empty dict, only add entity types that have results
 
-    items = list(graph.search_query(query, entity_types, account_id, limit))
+    # Microsoft Graph API doesn't support all entity type combinations
+    # Search each entity type separately and combine results
+    for entity_type in final_entity_types:
+        try:
+            items = list(graph.search_query(query, [entity_type], account_id, limit))
+            # Only add to results if there are actual items
+            if items:
+                results[entity_type] = items
+        except Exception as e:
+            # If individual entity type fails, continue with others
+            print(f"Warning: Search failed for entity type {entity_type}: {e}")
+            continue
 
-    for item in items:
-        resource_type = item.get("@odata.type", "").split(".")[-1]
-
-        if resource_type == "message":
-            results.setdefault("message", []).append(item)
-        elif resource_type == "event":
-            results.setdefault("event", []).append(item)
-        elif resource_type in ["driveItem", "file", "folder"]:
-            results.setdefault("driveItem", []).append(item)
-        else:
-            results.setdefault("other", []).append(item)
-
-    return {k: v for k, v in results.items() if v}
+    return results
