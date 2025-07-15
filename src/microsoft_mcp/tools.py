@@ -3,7 +3,7 @@ import datetime as dt
 import pathlib as pl
 from typing import Any
 from fastmcp import FastMCP
-from . import graph
+from . import graph, auth
 
 # Valid entity types based on Microsoft Graph API documentation
 VALID_ENTITY_TYPES = (
@@ -1319,7 +1319,7 @@ def semantic_unified_search(
 
     # Microsoft Graph API doesn't support all entity type combinations
     # Search each entity type separately and combine results
-    for entity_type in entity_types:
+    for entity_type in final_entity_types:
         try:
             # Use appropriate fields for each entity type
             if entity_type == "message":
