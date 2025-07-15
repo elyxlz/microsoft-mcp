@@ -893,7 +893,7 @@ def search_emails_advanced(
     subject_contains: str = "",
     date_after: str = "",
     date_before: str = "",
-    folder: str = "inbox",
+    folder: str = "",
     has_attachments: bool = False,
     is_read: bool = True,
     importance: str = "",
@@ -909,12 +909,15 @@ def search_emails_advanced(
         subject_contains: Text that must appear in the subject line
         date_after: ISO date string (e.g., "2025-01-01") for emails received after this date
         date_before: ISO date string (e.g., "2025-12-31") for emails received before this date
-        folder: Folder to search in (inbox, sent, drafts, etc.)
+        folder: Folder to search in - empty string (default) searches all folders, or specify "inbox", "sent", "drafts", etc.
         has_attachments: Filter for emails with attachments (True) or without (False)
         is_read: Filter for read emails (True) or unread emails (False)
         importance: Filter by importance level ("high", "normal", "low")
         content_level: Content detail level - "summary", "preview", or "full"
         limit: Maximum number of results to return
+
+    Default behavior: Searches across all folders (inbox, sent, archive, etc.) like search_emails.
+    Specify folder parameter to limit search to specific folder.
     """
     # STAGE 1: Build API-level filters for proven working fields
     api_filter_parts = []
@@ -952,9 +955,14 @@ def search_emails_advanced(
     else:  # full
         select_fields = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,body,conversationId,isRead"
 
-    # Use folder-specific filtering
-    folder_path = FOLDERS.get(folder.casefold(), folder)
-    endpoint = f"/me/mailFolders/{folder_path}/messages"
+    # Determine endpoint: cross-folder vs folder-specific search
+    if folder:
+        # Folder-specific search
+        folder_path = FOLDERS.get(folder.casefold(), folder)
+        endpoint = f"/me/mailFolders/{folder_path}/messages"
+    else:
+        # Cross-folder search (default behavior to match search_emails)
+        endpoint = "/me/messages"
 
     params = {
         "$top": min(fetch_limit, 100),
