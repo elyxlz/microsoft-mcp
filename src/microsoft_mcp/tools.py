@@ -916,61 +916,33 @@ def search_emails_advanced(
         content_level: Content detail level - "summary", "preview", or "full"
         limit: Maximum number of results to return
     """
-    # Build KQL search query using documented Microsoft Graph syntax
-    kql_parts = []
+    # STAGE 1: Build API-level filters for proven working fields
+    api_filter_parts = []
 
-    # Add free-text query if provided
-    if query:
-        kql_parts.append(query)
-
-    # Boolean filters using documented KQL syntax
-    if has_attachments:
-        kql_parts.append("hasAttachments:true")
+    # Use $filter for fields that work reliably
     if not is_read:
-        kql_parts.append("isread:false")
+        api_filter_parts.append("isRead eq false")
 
-    # String filters using documented KQL syntax
-    if sender:
-        # Use documented "from:" syntax for sender search
-        kql_parts.append(f"from:{sender}")
-
-    if subject_contains:
-        # Use documented "subject:" syntax
-        kql_parts.append(f"subject:{subject_contains}")
-
-    # Date filters using documented "received:" syntax
     if date_after:
-        # Convert to MM/DD/YYYY format as shown in documentation
-        if "-" in date_after:  # Convert from ISO format
-            try:
-                year, month, day = date_after.split("-")
-                date_formatted = f"{month}/{day}/{year}"
-                kql_parts.append(f"received>={date_formatted}")
-            except ValueError:
-                # Fallback to original format if parsing fails
-                kql_parts.append(f"received>={date_after}")
-        else:
-            kql_parts.append(f"received>={date_after}")
+        iso_date = f"{date_after}T00:00:00Z" if "T" not in date_after else date_after
+        api_filter_parts.append(f"receivedDateTime ge {iso_date}")
 
     if date_before:
-        # Convert to MM/DD/YYYY format as shown in documentation
-        if "-" in date_before:  # Convert from ISO format
-            try:
-                year, month, day = date_before.split("-")
-                date_formatted = f"{month}/{day}/{year}"
-                kql_parts.append(f"received<={date_formatted}")
-            except ValueError:
-                # Fallback to original format if parsing fails
-                kql_parts.append(f"received<={date_before}")
-        else:
-            kql_parts.append(f"received<={date_before}")
+        iso_date = f"{date_before}T23:59:59Z" if "T" not in date_before else date_before
+        api_filter_parts.append(f"receivedDateTime le {iso_date}")
 
-    # Importance filter using documented syntax
     if importance:
-        kql_parts.append(f"importance:{importance.lower()}")
+        api_filter_parts.append(f"importance eq '{importance.lower()}'")
 
-    # Combine all KQL parts with AND
-    search_query = " AND ".join(kql_parts) if kql_parts else ""
+    api_filter_query = " and ".join(api_filter_parts) if api_filter_parts else ""
+
+    # Determine if we need client-side filtering
+    needs_client_filtering = bool(
+        sender or subject_contains or has_attachments or query
+    )
+
+    # Smart limit adjustment: fetch more if we need to filter client-side
+    fetch_limit = limit * 3 if needs_client_filtering else limit
 
     # Define field selection based on content_level
     if content_level == "summary":
@@ -980,24 +952,67 @@ def search_emails_advanced(
     else:  # full
         select_fields = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments,body,conversationId,isRead"
 
-    # Use folder-specific search/filtering
+    # Use folder-specific filtering
     folder_path = FOLDERS.get(folder.casefold(), folder)
     endpoint = f"/me/mailFolders/{folder_path}/messages"
 
     params = {
-        "$top": min(limit, 100),
+        "$top": min(fetch_limit, 100),
         "$select": select_fields,
         "$orderby": "receivedDateTime desc",
     }
 
-    # Use $search with KQL syntax for all filtering (documented approach)
-    if search_query:
-        # Use documented KQL syntax with proper quoting
-        params["$search"] = f'"{search_query}"'
+    # Use $filter for proven working API-level filters
+    if api_filter_query:
+        params["$filter"] = api_filter_query
 
-    return list(
-        graph.request_paginated(endpoint, account_id, params=params, limit=limit)
+    # Use $search only for free-text query if no other filters
+    elif query and not needs_client_filtering:
+        params["$search"] = f'"{query}"'
+
+    # STAGE 1: Get initial results from API
+    results = list(
+        graph.request_paginated(endpoint, account_id, params=params, limit=fetch_limit)
     )
+
+    # STAGE 2: Apply client-side filtering for unsupported fields
+    if needs_client_filtering:
+        # Filter by sender (domain or email)
+        if sender:
+            sender_lower = sender.lower()
+            results = [
+                r
+                for r in results
+                if sender_lower
+                in r.get("from", {}).get("emailAddress", {}).get("address", "").lower()
+            ]
+
+        # Filter by subject contains
+        if subject_contains:
+            subject_lower = subject_contains.lower()
+            results = [
+                r for r in results if subject_lower in r.get("subject", "").lower()
+            ]
+
+        # Filter by has attachments
+        if has_attachments is not None:
+            results = [
+                r for r in results if r.get("hasAttachments", False) == has_attachments
+            ]
+
+        # Filter by free-text query in subject/body
+        if query:
+            query_lower = query.lower()
+            results = [
+                r
+                for r in results
+                if query_lower in r.get("subject", "").lower()
+                or query_lower in r.get("body", {}).get("content", "").lower()
+                or query_lower in r.get("bodyPreview", "").lower()
+            ]
+
+    # Apply final limit after all filtering
+    return results[:limit]
 
 
 @mcp.tool
